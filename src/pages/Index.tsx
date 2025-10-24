@@ -78,9 +78,24 @@ function defaultsByType(type: string) {
 const Index = () => {
   // Ambiente
   const { origin, pathname } = getSafeContext();
-  const __forcedOrigin = (typeof window !== 'undefined' && (window as any).__FORCE_ORIGIN__) || origin;
+  const refCtx = (() => {
+    if (typeof document === 'undefined') return null;
+    try {
+      const ref = document.referrer || '';
+      if (!ref) return null;
+      const ru = new URL(ref);
+      const firstSeg = ru.pathname.split('/').filter(Boolean)[0] || '';
+      const originWithFirst = ru.origin + (firstSeg ? '/' + firstSeg : '');
+      return { href: ref, origin: ru.origin, originWithFirst, pathname: ru.pathname };
+    } catch {
+      return null;
+    }
+  })();
+  const __forcedOrigin = (typeof window !== 'undefined' && (window as any).__FORCE_ORIGIN__) || refCtx?.originWithFirst || refCtx?.origin || origin;
   const originNo = normalizeOrigin(__forcedOrigin);
   const originCanon = canonOrigin(originNo);
+  // Chatwoot origin exato (inclui primeiro segmento como "/app")
+  const chatOriginEq = normalizeOrigin(refCtx?.originWithFirst || refCtx?.origin || '');
 
   // IDs (simplificado - sem roteamento complexo do Chatwoot)
   const [accountId, setAccountId] = useState('');
@@ -256,37 +271,59 @@ const Index = () => {
     
     try {
       const currentUrl = window.location.href;
-      console.log('[URL Detection] Current URL:', currentUrl);
+      const ref = typeof document !== 'undefined' ? document.referrer : '';
+      console.log('[URL Detection] Current URL:', currentUrl, '| Referrer:', ref || '—');
       
       const u = new URL(currentUrl);
       
-      // 1. Tenta extrair da query string
+      // 1) Query string
       const params = u.searchParams;
       let acc = params.get('account_id') || params.get('accountId') || params.get('account') || params.get('acc') || '';
       let inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
       let conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
 
-      // 2. Tenta extrair do hash
-      if (u.hash) {
+      // 2) Hash
+      if ((!acc || !inbox || !conv) && u.hash) {
         const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
-        if (!acc) acc = hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
-        if (!inbox) inbox = hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
-        if (!conv) conv = hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
+        acc = acc || hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
+        inbox = inbox || hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
+        conv = conv || hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
       }
 
-      // 3. Tenta extrair do pathname usando regex
-      // Padrão: /app/accounts/{account_id}/inbox/{inbox_id}/conversations/{conversation_id}
+      // 3) Pathname local
       if (!acc) {
-        const accountMatch = u.pathname.match(/\/accounts?\/(\d+)/i);
-        if (accountMatch) acc = accountMatch[1];
+        const m = u.pathname.match(/\/accounts?\/(\d+)/i);
+        if (m) acc = m[1];
       }
       if (!inbox) {
-        const inboxMatch = u.pathname.match(/\/inbox(?:es)?\/(\d+)/i);
-        if (inboxMatch) inbox = inboxMatch[1];
+        const m = u.pathname.match(/\/inbox(?:es)?\/(\d+)/i);
+        if (m) inbox = m[1];
       }
       if (!conv) {
-        const convMatch = u.pathname.match(/\/conversations?\/(\d+)/i);
-        if (convMatch) conv = convMatch[1];
+        const m = u.pathname.match(/\/conversations?\/(\d+)/i);
+        if (m) conv = m[1];
+      }
+
+      // 4) Referrer (Chatwoot) — prioritário quando o app roda embutido
+      if ((!acc || !inbox || !conv) && ref) {
+        try {
+          const ru = new URL(ref);
+          // URLs esperadas:
+          // - /app/accounts/:acc/inbox/:inbox/conversations/:conv
+          // - /app/accounts/:acc/conversations/:conv
+          if (!acc) {
+            const m = ru.pathname.match(/\/accounts?\/(\d+)/i);
+            if (m) acc = m[1];
+          }
+          if (!inbox) {
+            const m = ru.pathname.match(/\/inbox(?:es)?\/(\d+)/i);
+            if (m) inbox = m[1];
+          }
+          if (!conv) {
+            const m = ru.pathname.match(/\/conversations?\/(\d+)/i);
+            if (m) conv = m[1];
+          }
+        } catch {}
       }
 
       console.log('[URL Detection] Extracted:', { acc, inbox, conv });
@@ -897,6 +934,7 @@ const Index = () => {
             <div className="mt-2 font-mono text-xs text-muted-foreground whitespace-pre-wrap">
               <strong>🌐 URL Detectada:</strong><br/>
               URL completa: {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
+              referrer = {typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A'}<br/>
               origin = {origin}<br/>
               originNo (normalizado) = {originNo}<br/>
               originCanon (canônico) = {originCanon}<br/>
