@@ -867,7 +867,7 @@ const Index = () => {
           <details className="mb-3">
             <summary className="underline text-sm text-muted-foreground cursor-pointer">DEBUG</summary>
             <div className="mt-2 font-mono text-xs text-muted-foreground">
-              origin = {__forcedOrigin} (norm: {originNo}) (canon: {originCanon})<br/>
+              origin = {origin} (norm: {originNo}) (canon: {originCanon})<br/>
               accountId = {accountId} | inboxId = {inboxId} | conversationId = {conversationId}<br/>
               admin_api_key = {(typeof window !== 'undefined' && (window as any).__ADMIN_APIKEY__) || 'não definido'}<br/>
               perfis carregados = {profiles.length}<br/>
