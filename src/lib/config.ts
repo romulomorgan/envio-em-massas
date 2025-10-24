@@ -1,6 +1,6 @@
 // Configurações globais do sistema
 export const SUPABASE_URL = 'https://pbbuamqyfrvsybfqkebj.supabase.co';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBiYnVhbXF5ZnJ2c3liZnFrZWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg1MDUwODEsImV4cCI6MjA1NDA4MTA4MX0.Ydo3JZn0qWsTwGZtS26KhxESVvcSzlysIcQk4fAdZm0';
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBiYnVhbXF5ZnJ2c3liZnFrZWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg1MDUwODEsImV4cCI6MjA1NDA4MTA4MX0.Ydo3JZn0qWsTwGZtS26KhxESKvcSzlysIcQk4fAdZm0';
 export const SUPABASE_BUCKET = 'iadmin';
 
 export const NOCO_URL = 'https://noco.iadmin.ai';

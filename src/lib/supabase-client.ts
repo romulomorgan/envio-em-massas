@@ -8,6 +8,14 @@ function mask(v: string, show = 4) {
   if (!s) return '';
   return `${s.slice(0, show)}…${s.slice(-show)}`;
 }
+// Util para depurar o JWT público (anon) sem expor a assinatura
+function decodeJwtClaims(token: string) {
+  try {
+    const payload = token.split('.')[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return { ref: json?.ref, role: json?.role, iat: json?.iat, exp: json?.exp };
+  } catch { return null; }
+}
 
 // Permite override via window.__* mantendo valores fixos como fallback
 const SB_URL = (typeof window !== 'undefined' && (window as any).__SUPABASE_URL__)
@@ -86,6 +94,8 @@ export async function supaUpload(file: File, blockType: string) {
 // Healthcheck simples para diagnosticar credenciais/bucket
 export async function supaHealthcheck() {
   try {
+    const urlRef = (SB_URL.split('https://')[1] || '').split('.')[0] || '';
+    const claims = decodeJwtClaims(SB_KEY);
     const res = await supabase.storage.from(SB_BUCKET).list('', { limit: 1, offset: 0 });
     return {
       ok: !res.error,
@@ -95,7 +105,7 @@ export async function supaHealthcheck() {
         name: (res.error as any)?.name,
         statusCode: (res.error as any)?.statusCode,
       } : null,
-      env: { url: SB_URL, bucket: SB_BUCKET }
+      env: { url: SB_URL, bucket: SB_BUCKET, urlRef, tokenRef: claims?.ref, tokenRole: claims?.role, tokenMatchesUrl: claims?.ref === urlRef }
     };
   } catch (e: any) {
     return { ok: false, error: { message: e?.message || String(e) }, env: { url: SB_URL, bucket: SB_BUCKET } };
