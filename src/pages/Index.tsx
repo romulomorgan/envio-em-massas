@@ -236,11 +236,19 @@ const Index = () => {
         account_id: String(r.account_id ?? ''),
         is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
         cv_activa: !!(r.cv_activa === true || r.cv_activa === 'true' || r.cv_activa === 1 || r.cv_active === true || r.cv_active === 'true' || r.cv_active === 1),
-        admin_apikey: r.admin_apikey || r.adimin_apikey || '',
+        admin_apikey: r.admin_apikey || '',
         cv_email: r.cv_email || '',
         cv_apikey: r.cv_apikey || '',
         default: !!r.default
       }));
+
+      console.log('[tenantConfig] Records completos do NocoDB:', data?.list?.map((r: any) => ({
+        Id: r.Id,
+        chatwoot_origin: r.chatwoot_origin,
+        account_id: r.account_id,
+        admin_apikey: r.admin_apikey ? '✅ presente' : '❌ ausente',
+        admin_apikey_value: r.admin_apikey
+      })));
 
       console.log('[tenantConfig] Lista recebida:', list);
 
