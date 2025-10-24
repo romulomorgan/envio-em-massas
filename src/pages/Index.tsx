@@ -85,6 +85,7 @@ const Index = () => {
   // IDs (simplificado - sem roteamento complexo do Chatwoot)
   const [accountId, setAccountId] = useState('');
   const [inboxId, setInboxId] = useState('');
+  const [conversationId, setConversationId] = useState('');
 
   // Estados principais
   const [tab, setTab] = useState('direct');
@@ -258,16 +259,20 @@ const Index = () => {
 
       const acc = params.get('account_id') || params.get('accountId') || params.get('account') || params.get('acc') || '';
       const inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
+      const conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
 
       if (acc) setAccountId(acc);
       if (inbox) setInboxId(inbox);
+      if (conv) setConversationId(conv);
 
-      if ((!acc || !inbox) && u.hash) {
+      if ((!acc || !inbox || !conv) && u.hash) {
         const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
         const acc2 = hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
         const inbox2 = hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
+        const conv2 = hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
         if (!acc && acc2) setAccountId(acc2);
         if (!inbox && inbox2) setInboxId(inbox2);
+        if (!conv && conv2) setConversationId(conv2);
       }
 
       const parts = u.pathname.split('/').filter(Boolean);
@@ -278,6 +283,10 @@ const Index = () => {
       if (!inbox) {
         const ii = parts.findIndex(p => p.toLowerCase() === 'inbox' || p.toLowerCase() === 'inboxes');
         if (ii >= 0 && parts[ii + 1]) setInboxId(parts[ii + 1]);
+      }
+      if (!conv) {
+        const ci = parts.findIndex(p => p.toLowerCase() === 'conversations' || p.toLowerCase() === 'conversation');
+        if (ci >= 0 && parts[ci + 1]) setConversationId(parts[ci + 1]);
       }
     } catch {}
   }, []);
@@ -850,7 +859,23 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-6">
         <div className="card-custom p-6 md:p-8">
-          <h1 className="text-3xl font-bold mb-6 text-foreground">Envio em Massa</h1>
+          <h1 className="text-3xl font-bold mb-2 text-foreground">Envio em Massa</h1>
+          <p className="text-sm text-muted-foreground mb-4">
+            Fluxo: perfil → etiquetas/contatos → <b>composição por blocos</b> → <b>upload</b> → <b>agendar</b> e acompanhar.
+          </p>
+
+          <details className="mb-3">
+            <summary className="underline text-sm text-muted-foreground cursor-pointer">DEBUG</summary>
+            <div className="mt-2 font-mono text-xs text-muted-foreground">
+              origin = {__forcedOrigin} (norm: {originNo}) (canon: {originCanon})<br/>
+              accountId = {accountId} | inboxId = {inboxId} | conversationId = {conversationId}<br/>
+              admin_api_key = {(typeof window !== 'undefined' && (window as any).__ADMIN_APIKEY__) || 'não definido'}<br/>
+              perfis carregados = {profiles.length}<br/>
+              empreendimentos = {empreendimentos.length}<br/>
+              supabase = {tenantConfig ? 'configurado' : 'não'} | uploader = {(typeof window !== 'undefined' && (window as any).__UPLOADER_URL__) ? 'configurado' : 'não'}<br/>
+              noco: url={NOCO_URL}
+            </div>
+          </details>
           
           {/* Tabs */}
           <div className="flex gap-1 mb-6 border-b border-border">
