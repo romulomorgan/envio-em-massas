@@ -1249,8 +1249,13 @@ const Index = () => {
                               />
                             </Field>
                             <FileUpload
+                              blk={block}
                               accept="image/*"
-                              onUploadComplete={(url) => updateBlockData(block.id, { url })}
+                              onUploaded={(info) => updateBlockData(block.id, { 
+                                url: info.url, 
+                                _file: { name: info.name, type: info.type },
+                                _supaPath: info.path 
+                              })}
                             />
                           </div>
                         )}
@@ -1273,8 +1278,13 @@ const Index = () => {
                               />
                             </Field>
                             <FileUpload
+                              blk={block}
                               accept="video/*"
-                              onUploadComplete={(url) => updateBlockData(block.id, { url })}
+                              onUploaded={(info) => updateBlockData(block.id, { 
+                                url: info.url, 
+                                _file: { name: info.name, type: info.type },
+                                _supaPath: info.path 
+                              })}
                             />
                           </div>
                         )}
@@ -1290,8 +1300,13 @@ const Index = () => {
                               />
                             </Field>
                             <FileUpload
+                              blk={block}
                               accept="audio/*"
-                              onUploadComplete={(url) => updateBlockData(block.id, { url })}
+                              onUploaded={(info) => updateBlockData(block.id, { 
+                                url: info.url, 
+                                _file: { name: info.name, type: info.type },
+                                _supaPath: info.path 
+                              })}
                             />
                           </div>
                         )}
@@ -1321,8 +1336,14 @@ const Index = () => {
                               />
                             </Field>
                             <FileUpload
+                              blk={block}
                               accept=".pdf,.doc,.docx,.xls,.xlsx"
-                              onUploadComplete={(url) => updateBlockData(block.id, { url })}
+                              onUploaded={(info) => updateBlockData(block.id, { 
+                                url: info.url, 
+                                filename: info.name,
+                                _file: { name: info.name, type: info.type },
+                                _supaPath: info.path 
+                              })}
                             />
                           </div>
                         )}
