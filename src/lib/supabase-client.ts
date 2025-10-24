@@ -13,31 +13,49 @@ function mediaFolder(type: string) {
 }
 
 export async function supaUpload(file: File, blockType: string) {
-  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-  const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
-  const folder = mediaFolder(blockType || file.type);
-  const fileName = `${folder}/${blockType || 'media'}_${timestamp}_${randomSuffix}.${ext}`;
+  try {
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const folder = mediaFolder(blockType || file.type);
+    const fileName = `${folder}/${blockType || 'media'}_${timestamp}_${randomSuffix}.${ext}`;
 
-  const { data, error } = await supabase.storage
-    .from(SUPABASE_BUCKET)
-    .upload(fileName, file, { cacheControl: '3600', upsert: false, contentType: file.type });
+    console.log('[supaUpload] Iniciando upload:', { fileName, fileType: file.type, blockType });
 
-  if (error) {
-    console.error('[supaUpload] Upload error:', error);
-    throw new Error(error.message || 'Falha no upload');
+    const { data, error } = await supabase.storage
+      .from(SUPABASE_BUCKET)
+      .upload(fileName, file, { 
+        cacheControl: '3600', 
+        upsert: false
+      });
+
+    if (error) {
+      console.error('[supaUpload] Erro detalhado:', {
+        message: error.message,
+        error: error
+      });
+      throw new Error(error.message || 'Falha no upload');
+    }
+
+    console.log('[supaUpload] Upload bem-sucedido:', data);
+
+    const { data: urlData } = supabase.storage
+      .from(SUPABASE_BUCKET)
+      .getPublicUrl(fileName);
+
+    const result = {
+      url: urlData.publicUrl,
+      name: file.name,
+      type: file.type,
+      path: fileName
+    };
+
+    console.log('[supaUpload] Retornando dados:', result);
+    return result;
+  } catch (err) {
+    console.error('[supaUpload] Erro crítico:', err);
+    throw err;
   }
-
-  const { data: urlData } = supabase.storage
-    .from(SUPABASE_BUCKET)
-    .getPublicUrl(fileName);
-
-  return {
-    url: urlData.publicUrl,
-    name: file.name,
-    type: file.type,
-    path: fileName
-  };
 }
 
 export async function supaRemove(path: string) {
