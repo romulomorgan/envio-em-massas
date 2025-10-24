@@ -184,6 +184,32 @@ const Index = () => {
   // Envio
   const [sending, setSending] = useState(false);
   const [editingQueueId, setEditingQueueId] = useState<string | number | null>(null);
+  const [currentTab, setCurrentTab] = useState<'criar' | 'acompanhar'>('criar');
+  
+  // Handler para download de contatos
+  const handleDownloadContacts = (format: 'csv' | 'xls' | 'xlsx') => {
+    if (!contacts || contacts.length === 0) {
+      setStatus('Nenhum contato para exportar.');
+      return;
+    }
+    
+    const selectedContactsList = contacts.filter(c => selectedContacts.includes(c.id));
+    const contactsToExport = selectedContactsList.length > 0 ? selectedContactsList : contacts;
+    
+    const excelData = contactsToExport.map(c => ({
+      Nome: c.name || '',
+      Telefone: c.phone || '',
+      'Tags/Origem': c.tags || ''
+    }));
+    
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Contatos');
+    
+    const fileName = `contatos_${Date.now()}.${format}`;
+    XLSX.writeFile(wb, fileName, { bookType: format === 'csv' ? 'csv' : format as any });
+    setStatus(`✅ Contatos exportados: ${fileName}`);
+  };
 
   // Monitor
   const [queueRows, setQueueRows] = useState<QueueRecord[]>([]);
@@ -1182,13 +1208,11 @@ const Index = () => {
         return;
       }
       
-      // Preparar dados para Excel - formato correto do original
+      // Preparar dados para Excel no formato original
       const excelData = logs.map((log: any) => ({
-        'Status': log.status === 'success' ? 'OK' : 'ERRO',
-        'Mensagem': log.message || '',
-        'Contato': log.contact_name || '',
-        'Telefone': log.contact_phone || '',
-        'Timestamp': log.CreatedAt || ''
+        Numero: log.contact_phone || '',
+        Status: log.status === 'ok' || log.status === 'success' ? 'Sucesso' : 'Falha',
+        Motivo: log.msg || log.message || log.error || ''
       }));
       
       // Criar planilha
@@ -1333,7 +1357,7 @@ const Index = () => {
               className={`tab-custom ${tab === 'direct' ? 'tab-custom-active' : 'tab-custom-inactive'}`}
               onClick={() => setTab('direct')}
             >
-              Direto
+              Criar campanha
             </button>
             <button
               className={`tab-custom ${tab === 'monitor' ? 'tab-custom-active' : 'tab-custom-inactive'}`}
@@ -1607,8 +1631,25 @@ const Index = () => {
                 {/* Lista de contatos */}
                 <div className="mt-6">
                   <div className="flex items-center justify-between mb-3">
-                    <div className="text-sm text-muted-foreground">
-                      Total: {contacts.length} • Selecionados: {selectedContacts.length}
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm text-muted-foreground">
+                        Total: {contacts.length}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Selecionados: {selectedContacts.length}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Salvar:</span>
+                        <SmallBtn onClick={() => handleDownloadContacts('csv')} variant="secondary">
+                          CSV
+                        </SmallBtn>
+                        <SmallBtn onClick={() => handleDownloadContacts('xls')} variant="secondary">
+                          XLS
+                        </SmallBtn>
+                        <SmallBtn onClick={() => handleDownloadContacts('xlsx')} variant="secondary">
+                          XLSX
+                        </SmallBtn>
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <input
