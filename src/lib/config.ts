@@ -9,8 +9,6 @@ export const NOCO_PROJECT_ID = 'pg6kxv5d7aqcaby';
 export const TABLE_SEND_QUEUE_ID = 'm2jlcomq5xbl9ow';
 export const TABLE_SEND_LOGS_ID = 'm94sc6d7vih3589';
 export const NOCO_TABLE_PROFILES_ID = 'mjjcsg905l9iw25';
-export const TABLE_ERROR_PROFILES = 'mjjcsg905l9iw25';
-export const TABLE_EMPRESA_TOKENS = 'mv4m28s2v1bs0me';
 
 export const WEBHOOK_LIST_USERS = "https://web.iadmin.ai/webhook/usuario-por-marcadores";
 export const WEBHOOK_LIST_ENTS = "https://web.iadmin.ai/webhook/usuario-por-empreendimentos";

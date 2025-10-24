@@ -32,7 +32,9 @@ import {
   NOCO_TENANT_TABLE_ID,
   NOCO_TENANT_VIEW_ID,
   NOCO_URL,
-  NOCO_TOKEN
+  NOCO_TOKEN,
+  TABLE_SEND_QUEUE_ID,
+  TABLE_SEND_LOGS_ID
 } from '@/lib/config';
 import {
   queueCreate,
@@ -919,7 +921,7 @@ const Index = () => {
       return;
     }
     if (!accountId) {
-      setStatus('❌ Erro: account_id não detectado. Cole a URL do Chatwoot manualmente na seção DEBUG.');
+      setStatus('❌ Erro: account_id não detectado. Cole a URL do Chatwoot manualmente.');
       return;
     }
     if (!selectedProfileId) {
@@ -941,46 +943,82 @@ const Index = () => {
       return;
     }
 
+    // Verifica se tem origin, token e instance no perfil
+    if (!selectedProfile.origin) {
+      setStatus('❌ Perfil sem URL de origem (evo_base_url).');
+      return;
+    }
+
     setSending(true);
     try {
       const contactsToSend = contacts.filter(c => selectedContacts.includes(c.id));
       
-      // Estrutura do payload seguindo o formato do SERVER.mjs
-      const payload = {
-        name: campaignName,
-        status: 'pending',
-        scheduled_for: schedule || new Date().toISOString(),
-        profile_id: selectedProfile.Id,
-        account_id: accountId,
-        inbox_id: selectedProfile.inbox_id || inboxId || null,
-        conversation_id: conversationId || null,
-        chatwoot_origin: originCanon,
-        admin_apikey: tenantConfig.admin_apikey,
-        contacts_count: contactsToSend.length,
-        items_count: blocks.length * contactsToSend.length,
-        progress_contact_ix: 0,
-        contacts: contactsToSend.map(c => ({
-          name: c.name,
-          phone: c.phone
-        })),
-        blocks: blocks.map(b => ({
-          type: b.type,
-          action: normalizeAction(b.action),
-          data: b.data,
-          itemWait: b.itemWait
-        })),
+      // Extrai os dados do perfil (format: https://evo.example.com/instance_name)
+      const profileUrl = selectedProfile.origin || '';
+      const urlParts = profileUrl.split('/');
+      const evo_instance = urlParts[urlParts.length - 1] || '';
+      const evo_base_url = urlParts.slice(0, -1).join('/') || profileUrl;
+      const evo_token = selectedProfile.admin_apikey || tenantConfig.admin_apikey || '';
+
+      const runId = `run_${Date.now()}_${uid()}`;
+      const whenUTC = schedule || new Date().toISOString();
+      
+      // Formata contatos
+      const shuffledContacts = contactsToSend.map(c => ({
+        name: c.name,
+        phone: c.phone,
+        srcImported: !!c.srcImported,
+        srcLabel: !!c.srcLabel,
+        tags: c.tags || '—'
+      }));
+
+      // Formata blocos
+      const blocksForPayload = blocks.map(b => ({
+        type: b.type,
+        action: normalizeAction(b.action),
+        data: b.data,
+        itemWait: b.itemWait
+      }));
+
+      // Payload JSON interno (usado pelo servidor)
+      const payload_json = {
+        randomize: true,
+        seed: runId,
         delays: {
           itemDelay,
           itemVariance,
           contactDelay,
           contactVariance
         },
-        defaultCountryCode
+        profile: {
+          evo_base_url,
+          evo_instance,
+          evo_token
+        },
+        blocks: blocksForPayload,
+        contacts: shuffledContacts
       };
 
-      console.log('[handleSend] Payload completo:', payload);
+      // Record que será salvo no NocoDB
+      const record = {
+        run_id: runId,
+        account_id: Number(accountId || 0),
+        inbox_id: Number(selectedProfile.inbox_id || inboxId || 0),
+        chatwoot_origin: originCanon,
+        name: campaignName || 'Campanha',
+        status: 'scheduled',
+        is_paused: false,
+        scheduled_for: whenUTC,
+        contacts_count: shuffledContacts.length,
+        items_count: blocks.length,
+        progress_contact_ix: 0,
+        progress_item_ix: 0,
+        payload_json
+      };
 
-      const result = await queueCreate(payload);
+      console.log('[handleSend] Record completo:', record);
+
+      const result = await queueCreate(record);
       console.log('[handleSend] Resultado:', result);
       
       setStatus(`✅ Campanha "${campaignName}" criada com sucesso! ID: ${result.Id || result.id}`);
@@ -1015,7 +1053,8 @@ const Index = () => {
       const sortDir = queueSort.dir === 'desc' ? '-' : '';
       const sort = queueSort.dir === 'normal' ? '' : `&sort=${sortDir}${sortField}`;
       
-      const url = `${NOCO_URL}/api/v2/tables/m6zl5h7bz31sxol/records?where=${encodeURIComponent(where)}&offset=${offset}&limit=${pageSize}${sort}`;
+      // USA A TABELA CORRETA: TABLE_SEND_QUEUE_ID
+      const url = `${NOCO_URL}/api/v2/tables/${TABLE_SEND_QUEUE_ID}/records?where=${encodeURIComponent(where)}&offset=${offset}&limit=${pageSize}${sort}`;
       
       console.log('[Monitor] Consultando campanhas:', { accountId, originCanon, url });
       
