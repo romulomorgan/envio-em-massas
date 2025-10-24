@@ -4,6 +4,9 @@ import { SectionTitle } from '@/components/SectionTitle';
 import { Field } from '@/components/Field';
 import { SmallBtn } from '@/components/SmallBtn';
 import { EmojiTextarea } from '@/components/EmojiTextarea';
+import { Pause, X, Download, Copy, Edit, Trash2, Play } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { EmojiInput } from '@/components/EmojiInput';
 import { WAPreview } from '@/components/WAPreview';
 import { FileUpload } from '@/components/FileUpload';
@@ -40,13 +43,12 @@ import {
   queueCreate,
   queuePatch,
   queueDelete,
+  queueGetOne,
   nocoGET,
   logsListByQueueId,
   logsListForRun
 } from '@/lib/noco-api';
 import { Contact, Block, Label, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 const TYPE_LABEL: Record<string, string> = {
   text: 'Texto',
@@ -1180,16 +1182,13 @@ const Index = () => {
         return;
       }
       
-      // Preparar dados para Excel
+      // Preparar dados para Excel - formato correto do original
       const excelData = logs.map((log: any) => ({
-        'ID': log.Id,
-        'Contato': log.contact_name || '-',
-        'Telefone': log.contact_phone || '-',
-        'Status': log.status === 'success' ? 'Sucesso' : log.status === 'failed' ? 'Falha' : log.status,
-        'Mensagem': log.message || '-',
-        'Data/Hora': log.CreatedAt ? formatBRDateTime(log.CreatedAt) : '-',
-        'Item': log.item_ix || 0,
-        'Erro': log.error_msg || '-'
+        'Status': log.status === 'success' ? 'OK' : 'ERRO',
+        'Mensagem': log.message || '',
+        'Contato': log.contact_name || '',
+        'Telefone': log.contact_phone || '',
+        'Timestamp': log.CreatedAt || ''
       }));
       
       // Criar planilha
@@ -1205,6 +1204,71 @@ const Index = () => {
     } catch (e: any) {
       console.error('[handleDownloadExcel] Erro:', e);
       setStatus(`❌ Erro ao baixar relatório: ${e.message}`);
+    }
+  }
+
+  async function handleCloneQueue(queueId: string | number) {
+    try {
+      const data = await queueGetOne(queueId);
+      if (!data) return;
+      
+      // Carregar os dados da campanha no formulário
+      setCampaignName(data.name + ' (cópia)');
+      setSchedule('');
+      
+      // Carregar contatos
+      const contactsList = JSON.parse(data.contacts || '[]');
+      const contactIds = contactsList.map((c: any) => c.id);
+      setSelectedContacts(contactIds);
+      
+      // Carregar blocos
+      const blocksList = JSON.parse(data.blocks || '[]');
+      setBlocks(blocksList);
+      
+      // Mudar para aba de criar campanha
+      setTab('direct');
+      setStatus('Campanha clonada! Faça as alterações desejadas.');
+    } catch (e: any) {
+      setStatus(`Erro ao clonar: ${e.message}`);
+    }
+  }
+
+  async function handleEditQueue(queueId: string | number) {
+    try {
+      const data = await queueGetOne(queueId);
+      if (!data) return;
+      
+      // Carregar os dados da campanha no formulário
+      setCampaignName(data.name);
+      setSchedule(data.scheduled_for ? data.scheduled_for.substring(0, 16) : '');
+      
+      // Carregar contatos
+      const contactsList = JSON.parse(data.contacts || '[]');
+      const contactIds = contactsList.map((c: any) => c.id);
+      setSelectedContacts(contactIds);
+      
+      // Carregar blocos
+      const blocksList = JSON.parse(data.blocks || '[]');
+      setBlocks(blocksList);
+      
+      // Guardar ID para atualização
+      setEditingQueueId(queueId);
+      
+      // Mudar para aba de criar campanha
+      setTab('direct');
+      setStatus('Editando campanha. Faça as alterações e clique em Agendar.');
+    } catch (e: any) {
+      setStatus(`Erro ao editar: ${e.message}`);
+    }
+  }
+
+  async function handleCancelQueue(queueId: string | number) {
+    try {
+      await queuePatch(queueId, { status: 'cancelled' });
+      setStatus('Campanha cancelada.');
+      loadMonitor();
+    } catch (e: any) {
+      setStatus(`Erro ao cancelar: ${e.message}`);
     }
   }
 
@@ -1975,23 +2039,23 @@ const Index = () => {
                             <td className="px-4 py-2 text-sm font-mono">{q.Id}</td>
                             <td className="px-4 py-2 text-sm font-medium">{q.name}</td>
                             <td className="px-4 py-2">
-                              <span className={`status-pill ${
-                                q.status === 'completed' ? 'status-pill-success' :
-                                q.status === 'running' ? 'status-pill-info' :
-                                q.status === 'paused' ? 'status-pill-warning' :
-                                q.status === 'failed' ? 'status-pill-error' :
-                                'status-pill-default'
+                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                                q.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                                q.status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
+                                q.status === 'scheduled' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
+                                q.status === 'paused' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                q.status === 'cancelled' ? 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400' :
+                                q.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                                'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
                               }`}>
                                 {q.status === 'scheduled' ? 'agendado' :
                                  q.status === 'running' ? 'executando' :
-                                 q.status === 'completed' ? 'concluído' :
+                                 q.status === 'completed' ? 'feito' :
                                  q.status === 'paused' ? 'pausado' :
-                                 q.status === 'failed' ? 'falhou' :
+                                 q.status === 'cancelled' ? 'cancelado' :
+                                 q.status === 'failed' ? 'erro' :
                                  q.status}
                               </span>
-                              {q.is_paused && (
-                                <span className="status-pill status-pill-warning ml-2">pausado</span>
-                              )}
                             </td>
                             <td className="px-4 py-2 text-sm text-muted-foreground">
                               {q.scheduled_for ? formatBRDateTime(q.scheduled_for) : '-'}
@@ -2010,28 +2074,76 @@ const Index = () => {
                               </div>
                             </td>
                             <td className="px-4 py-2">
-                              <div className="flex gap-1 flex-wrap">
-                                {q.status === 'scheduled' && !q.is_paused && (
-                                  <SmallBtn onClick={() => handlePauseQueue(q.Id)} variant="secondary">
-                                    Pausar
-                                  </SmallBtn>
-                                )}
-                                {q.status === 'running' && !q.is_paused && (
-                                  <SmallBtn onClick={() => handlePauseQueue(q.Id)} variant="secondary">
-                                    Pausar
-                                  </SmallBtn>
+                              <div className="flex gap-1 items-center">
+                                {(q.status === 'scheduled' || q.status === 'running') && !q.is_paused && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => handlePauseQueue(q.Id)}
+                                    title="Pausar"
+                                  >
+                                    <Pause className="h-4 w-4" />
+                                  </Button>
                                 )}
                                 {q.is_paused && (
-                                  <SmallBtn onClick={() => handleResumeQueue(q.Id)} variant="secondary">
-                                    Retomar
-                                  </SmallBtn>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => handleResumeQueue(q.Id)}
+                                    title="Retomar"
+                                  >
+                                    <Play className="h-4 w-4" />
+                                  </Button>
                                 )}
-                                <SmallBtn onClick={() => handleDownloadExcel(q.Id, q.name, q.run_id)} variant="secondary">
-                                  Baixar Excel
-                                </SmallBtn>
-                                <SmallBtn onClick={() => handleDeleteQueue(q.Id)} variant="destructive">
-                                  Excluir
-                                </SmallBtn>
+                                {(q.status === 'scheduled' || q.status === 'running') && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => handleCancelQueue(q.Id)}
+                                    title="Cancelar"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8"
+                                  onClick={() => handleDownloadExcel(q.Id, q.name, q.run_id)}
+                                  title="Baixar Excel"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8"
+                                  onClick={() => handleCloneQueue(q.Id)}
+                                  title="Clonar campanha"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8"
+                                  onClick={() => handleEditQueue(q.Id)}
+                                  title="Editar"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  onClick={() => handleDeleteQueue(q.Id)}
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
                             </td>
                           </tr>
