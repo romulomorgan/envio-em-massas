@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supaUpload, supaRemove } from '@/lib/supabase-client';
+import { supaUpload, supaRemove, supaHealthcheck } from '@/lib/supabase-client';
 import { Block } from '@/types/envio';
 import { uid } from '@/lib/utils-envio';
 
@@ -15,6 +15,7 @@ interface FileUploadProps {
 export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError, onRemoved }: FileUploadProps) {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [uploadDebug, setUploadDebug] = useState<string>('');
   const inputId = `file-input-${blk?.id || uid()}`;
 
   // Verifica se já tem arquivo upado
@@ -27,6 +28,7 @@ export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError,
 
     setBusy(true);
     setStatus('Enviando...');
+    setUploadDebug(JSON.stringify({ step: 'select', name: file.name, size: file.size, type: file.type }, null, 2));
 
     try {
       // Remove arquivo antigo do Supabase se existir
@@ -37,6 +39,7 @@ export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError,
       // Faz upload do novo arquivo
       const info = await supaUpload(file, blk?.type || 'media');
       setStatus('✅ Arquivo enviado com sucesso!');
+      setUploadDebug(JSON.stringify({ ok: true, result: info }, null, 2));
       
       if (onUploaded) {
         onUploaded({
@@ -53,6 +56,10 @@ export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError,
       console.error('[FileUpload] Erro:', err);
       const msg = 'Erro no upload: ' + (err?.message || 'falha desconhecida');
       setStatus(msg);
+      try {
+        const hc = await supaHealthcheck();
+        setUploadDebug(JSON.stringify({ ok: false, error: err?.message || String(err), healthcheck: hc }, null, 2));
+      } catch {}
       if (onError) onError(msg);
     } finally {
       setBusy(false);
@@ -112,6 +119,12 @@ export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError,
         <div className={`text-xs ${status.includes('sucesso') || status.includes('✅') ? 'text-green-600' : status.includes('Erro') || status.includes('❌') ? 'text-red-600' : 'text-muted-foreground'}`}>
           {status}
         </div>
+      )}
+      {uploadDebug && (
+        <details className="mt-1">
+          <summary className="text-xs text-muted-foreground cursor-pointer">Debug do upload</summary>
+          <pre className="mt-1 p-2 bg-muted rounded text-xs overflow-auto max-h-40">{uploadDebug}</pre>
+        </details>
       )}
       
       {hasFile && (
