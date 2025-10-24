@@ -648,13 +648,15 @@ const Index = () => {
             id: uid(),
             name: name || 'Sem nome',
             phone,
-            tags: tagsRaw,
+            tags: tagsRaw || 'IMPORTADOS',
             srcImported: true
           });
         }
       }
       
       setContacts(prev => [...prev, ...imported]);
+      // Seleciona automaticamente todos os contatos importados
+      setSelectedContacts(prev => [...prev, ...imported.map(c => c.id)]);
       setStatus(`Importados ${imported.length} contatos do arquivo.`);
     } catch (e: any) {
       setStatus(`Erro ao importar: ${e.message}`);
@@ -723,11 +725,12 @@ const Index = () => {
         id: uid(),
         name: u.name || 'Sem nome',
         phone: ensureE164(stripDigits(u.phone_number || u.phone || ''), defaultCountryCode),
-        tags: '',
+        tags: 'ETIQUETAS',
         srcLabel: true
       }));
       
       setContacts(prev => [...prev, ...newContacts]);
+      setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
       setStatus(`${newContacts.length} contatos carregados de etiquetas.`);
     } catch (e: any) {
       setStatus(`Erro: ${e.message}`);
@@ -776,11 +779,12 @@ const Index = () => {
           id: uid(),
           name: g?.name || 'Grupo',
           phone: gid,
-          tags: '',
+          tags: 'GRUPOS',
           srcGroup: true
         };
       });
       setContacts(prev => [...prev, ...newContacts]);
+      setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
       setStatus(`${newContacts.length} grupos adicionados.`);
     } else {
       setGroupParticipantsBusy(true);
@@ -808,11 +812,12 @@ const Index = () => {
           id: uid(),
           name: u.name || 'Sem nome',
           phone: ensureE164(stripDigits(u.id || ''), defaultCountryCode),
-          tags: '',
+          tags: 'GRUPOS',
           srcGroup: true
         }));
         
         setContacts(prev => [...prev, ...newContacts]);
+        setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
         setStatus(`${newContacts.length} participantes carregados.`);
       } catch (e: any) {
         setStatus(`Erro: ${e.message}`);
@@ -875,11 +880,12 @@ const Index = () => {
         id: uid(),
         name: u.name || 'Sem nome',
         phone: ensureE164(stripDigits(u.phone || u.telefone || ''), defaultCountryCode),
-        tags: '',
+        tags: 'EMPREENDIMENTOS',
         srcEmp: true
       }));
       
       setContacts(prev => [...prev, ...newContacts]);
+      setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
       setStatus(`${newContacts.length} contatos carregados de empreendimentos.`);
     } catch (e: any) {
       setStatus(`Erro: ${e.message}`);
@@ -908,6 +914,30 @@ const Index = () => {
       callback: () => {
         setContacts([]);
         setSelectedContacts([]);
+        setDeleteConfirm({ show: false, type: '' });
+      }
+    });
+  }
+
+  function clearBySource(source: 'importados' | 'etiquetas' | 'grupos' | 'empreendimentos') {
+    const predicate = (c: Contact) => {
+      const t = (c.tags || '').toUpperCase();
+      if (source === 'importados') return !!c.srcImported || t.includes('IMPORT');
+      if (source === 'etiquetas') return !!c.srcLabel || t.includes('ETIQUET');
+      if (source === 'grupos') return !!c.srcGroup || t.includes('GRUPO');
+      if (source === 'empreendimentos') return !!c.srcEmp || t.includes('EMPREEND');
+      return false;
+    };
+
+    setDeleteConfirm({
+      show: true,
+      type: 'clear-source',
+      callback: () => {
+        setContacts(prev => prev.filter(c => !predicate(c)));
+        setSelectedContacts(prev => prev.filter(id => {
+          const c = contacts.find(cc => cc.id === id);
+          return c ? !predicate(c) : true;
+        }));
         setDeleteConfirm({ show: false, type: '' });
       }
     });
@@ -1844,6 +1874,26 @@ const Index = () => {
                       <SmallBtn onClick={toggleSelectAll} variant="secondary">
                         {selectedContacts.length === visibleContacts.length ? 'Desmarcar' : 'Marcar'} todos
                       </SmallBtn>
+                      {contacts.some(c => c.srcImported || (c.tags || '').toUpperCase().includes('IMPORT')) && (
+                        <SmallBtn onClick={() => clearBySource('importados')} variant="destructive">
+                          Limpar importados
+                        </SmallBtn>
+                      )}
+                      {contacts.some(c => c.srcLabel || (c.tags || '').toUpperCase().includes('ETIQUET')) && (
+                        <SmallBtn onClick={() => clearBySource('etiquetas')} variant="destructive">
+                          Limpar etiquetas
+                        </SmallBtn>
+                      )}
+                      {contacts.some(c => c.srcGroup || (c.tags || '').toUpperCase().includes('GRUPO')) && (
+                        <SmallBtn onClick={() => clearBySource('grupos')} variant="destructive">
+                          Limpar grupos
+                        </SmallBtn>
+                      )}
+                      {contacts.some(c => c.srcEmp || (c.tags || '').toUpperCase().includes('EMPREEND')) && (
+                        <SmallBtn onClick={() => clearBySource('empreendimentos')} variant="destructive">
+                          Limpar empreendimentos
+                        </SmallBtn>
+                      )}
                       <SmallBtn onClick={clearAllContacts} variant="destructive">
                         Limpar lista
                       </SmallBtn>
@@ -2465,6 +2515,7 @@ const Index = () => {
             <AlertDialogDescription>
               {deleteConfirm.type === 'contact' && 'Deseja realmente remover este contato da lista?'}
               {deleteConfirm.type === 'all-contacts' && 'Deseja realmente remover TODOS os contatos da lista? Esta ação não pode ser desfeita.'}
+              {deleteConfirm.type === 'clear-source' && 'Deseja realmente remover todos os contatos desta origem?'}
               {deleteConfirm.type === 'block' && 'Deseja realmente excluir este bloco de mensagem? O arquivo será removido do armazenamento.'}
               {deleteConfirm.type === 'campaign' && 'Deseja realmente excluir esta campanha? Esta ação não pode ser desfeita.'}
             </AlertDialogDescription>
