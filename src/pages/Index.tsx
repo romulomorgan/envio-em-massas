@@ -523,18 +523,34 @@ const Index = () => {
       const data = await nocoGET(url);
       const list = Array.isArray(data?.list) ? data.list : [];
       
-      console.log('[Perfis] Resposta NocoDB:', { total: list.length, list });
+      console.log('[Perfis] Resposta NocoDB completa:', list);
       
       const mappedProfiles = list.map((r: any) => ({
         Id: r.Id,
         name: r.name || r.profile_name || 'Perfil',
-        origin: r.origin,
+        evo_base_url: r.evo_base_url || '',
+        evo_instance: r.evo_instance || '',
+        evo_token: r.evo_token || '',
         chatwoot_origin: r.chatwoot_origin,
         account_id: r.account_id,
         inbox_id: r.inbox_id,
         admin_apikey: r.admin_apikey || r.adimin_apikey || '',
-        default: !!(r.default === true || r.default === 'true' || r.default === 1)
+        default: !!(r.default === true || r.default === 'true' || r.default === 1),
+        is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
+        item_delay: Number(r.item_delay) || 3,
+        item_variance: Number(r.item_variance) || 4,
+        contact_delay: Number(r.contact_delay) || 10,
+        contact_variance: Number(r.contact_variance) || 10
       }));
+      
+      console.log('[Perfis] Perfis mapeados:', mappedProfiles.map(p => ({
+        Id: p.Id,
+        name: p.name,
+        evo_base_url: p.evo_base_url ? '✅' : '❌',
+        evo_instance: p.evo_instance ? '✅' : '❌',
+        evo_token: p.evo_token ? '✅' : '❌',
+        is_active: p.is_active
+      })));
       
       // Ordena perfis: perfil com default=true primeiro
       const sortedProfiles = mappedProfiles.sort((a, b) => {
@@ -551,8 +567,6 @@ const Index = () => {
         setSelectedProfileId(String(sortedProfiles[0].Id));
         console.log('[Perfis] Auto-selecionado:', sortedProfiles[0]);
       }
-      
-      console.log('[Perfis] Perfis carregados:', sortedProfiles);
       
     } catch (err: any) {
       console.error('[Perfis] Erro ao carregar:', err);
@@ -921,7 +935,7 @@ const Index = () => {
       return;
     }
     if (!accountId) {
-      setStatus('❌ Erro: account_id não detectado. Cole a URL do Chatwoot manualmente.');
+      setStatus('❌ Erro: account_id não detectado.');
       return;
     }
     if (!selectedProfileId) {
@@ -943,9 +957,28 @@ const Index = () => {
       return;
     }
 
-    // Verifica se tem origin, token e instance no perfil
-    if (!selectedProfile.origin) {
-      setStatus('❌ Perfil sem URL de origem (evo_base_url).');
+    // Verifica se o perfil está ativo
+    if (!selectedProfile.is_active) {
+      setStatus('❌ Perfil não está ativo.');
+      return;
+    }
+
+    // Verifica se tem os dados necessários do Evolution
+    if (!selectedProfile.evo_base_url) {
+      setStatus('❌ Perfil sem URL de origem (evo_base_url). Verifique a configuração no NocoDB.');
+      console.error('[handleSend] Perfil sem evo_base_url:', selectedProfile);
+      return;
+    }
+
+    if (!selectedProfile.evo_instance) {
+      setStatus('❌ Perfil sem instância configurada (evo_instance).');
+      console.error('[handleSend] Perfil sem evo_instance:', selectedProfile);
+      return;
+    }
+
+    if (!selectedProfile.evo_token) {
+      setStatus('❌ Perfil sem token configurado (evo_token).');
+      console.error('[handleSend] Perfil sem evo_token:', selectedProfile);
       return;
     }
 
@@ -953,13 +986,6 @@ const Index = () => {
     try {
       const contactsToSend = contacts.filter(c => selectedContacts.includes(c.id));
       
-      // Extrai os dados do perfil (format: https://evo.example.com/instance_name)
-      const profileUrl = selectedProfile.origin || '';
-      const urlParts = profileUrl.split('/');
-      const evo_instance = urlParts[urlParts.length - 1] || '';
-      const evo_base_url = urlParts.slice(0, -1).join('/') || profileUrl;
-      const evo_token = selectedProfile.admin_apikey || tenantConfig.admin_apikey || '';
-
       const runId = `run_${Date.now()}_${uid()}`;
       const whenUTC = schedule || new Date().toISOString();
       
@@ -985,15 +1011,15 @@ const Index = () => {
         randomize: true,
         seed: runId,
         delays: {
-          itemDelay,
-          itemVariance,
-          contactDelay,
-          contactVariance
+          itemDelay: selectedProfile.item_delay || itemDelay,
+          itemVariance: selectedProfile.item_variance || itemVariance,
+          contactDelay: selectedProfile.contact_delay || contactDelay,
+          contactVariance: selectedProfile.contact_variance || contactVariance
         },
         profile: {
-          evo_base_url,
-          evo_instance,
-          evo_token
+          evo_base_url: selectedProfile.evo_base_url,
+          evo_instance: selectedProfile.evo_instance,
+          evo_token: selectedProfile.evo_token
         },
         blocks: blocksForPayload,
         contacts: shuffledContacts
@@ -1016,6 +1042,7 @@ const Index = () => {
         payload_json
       };
 
+      console.log('[handleSend] Perfil selecionado:', selectedProfile);
       console.log('[handleSend] Record completo:', record);
 
       const result = await queueCreate(record);

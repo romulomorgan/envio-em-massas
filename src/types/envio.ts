@@ -32,12 +32,19 @@ export interface Empreendimento {
 export interface Profile {
   Id: string | number;
   name: string;
-  origin?: string;
+  evo_base_url?: string;
+  evo_instance?: string;
+  evo_token?: string;
   chatwoot_origin?: string;
   account_id?: string | number;
   inbox_id?: string | number;
   admin_apikey?: string;
   default?: boolean;
+  is_active?: boolean;
+  item_delay?: number;
+  item_variance?: number;
+  contact_delay?: number;
+  contact_variance?: number;
 }
 
 export interface BlockData {
