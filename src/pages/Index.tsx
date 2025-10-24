@@ -106,6 +106,7 @@ const Index = () => {
   const [accountId, setAccountId] = useState('');
   const [inboxId, setInboxId] = useState('');
   const [conversationId, setConversationId] = useState('');
+  const [parentPathInfo, setParentPathInfo] = useState<{ href?: string; pathname?: string } | null>(null);
 
   // Estados principais
   const [tab, setTab] = useState('direct');
@@ -345,15 +346,31 @@ const Index = () => {
     const onMsg = (e: MessageEvent) => {
       try {
         const d: any = e?.data;
-        if (!d || typeof d !== 'object') return;
+        if (!d || (typeof d !== 'object' && typeof d !== 'string')) return;
+
+        // Se vier uma URL completa
+        const maybeUrl = typeof d === 'string' ? d : (d.url || d.href || d.chatwoot_url || d.chatwoot_href);
+        if (typeof maybeUrl === 'string' && /^https?:\/\//i.test(maybeUrl)) {
+          try {
+            const u = new URL(maybeUrl);
+            setParentPathInfo({ href: u.href, pathname: u.pathname });
+            const ids = extractIdsFromPath(u.pathname);
+            if (ids.acc) setAccountId(ids.acc);
+            if (ids.inbox) setInboxId(ids.inbox);
+            if (ids.conv) setConversationId(ids.conv);
+            console.log('[postMessage] URL recebida do parent:', u.href, ids);
+          } catch {}
+        }
+
         const toNumStr = (v: any) => {
           if (typeof v === 'number' && Number.isFinite(v)) return String(v);
           if (typeof v === 'string' && /^\d+$/.test(v.trim())) return v.trim();
           return '';
         };
-        const acc = toNumStr(d.account_id || d.accountId || d.acc);
-        const inbox = toNumStr(d.inbox_id || d.inboxId || d.inbox);
-        const conv = toNumStr(d.conversation_id || d.conversationId || d.conv);
+
+        const acc = toNumStr((d as any).account_id || (d as any).accountId || (d as any).acc);
+        const inbox = toNumStr((d as any).inbox_id || (d as any).inboxId || (d as any).inbox);
+        const conv = toNumStr((d as any).conversation_id || (d as any).conversationId || (d as any).conv);
         if (acc) setAccountId(acc);
         if (inbox) setInboxId(inbox);
         if (conv) setConversationId(conv);
@@ -371,7 +388,22 @@ const Index = () => {
     return () => window.removeEventListener('message', onMsg);
   }, []);
 
-  // Carregar perfis do NocoDB
+  // Solicita periodicamente a URL completa ao parent (caso ele queira responder)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let id: any;
+    const tick = () => {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'REQUEST_CHATWOOT_URL' }, '*');
+        }
+      } catch {}
+    };
+    id = setInterval(tick, 2000);
+    tick();
+    return () => clearInterval(id);
+  }, []);
+
   async function loadProfiles() {
     if (!originCanon || !accountId) {
       console.log('[Perfis] Aguardando originCanon e accountId...', { originCanon, accountId });
@@ -968,8 +1000,8 @@ const Index = () => {
             <div className="mt-2 font-mono text-xs text-muted-foreground whitespace-pre-wrap">
               <strong>🌐 URL Detectada:</strong><br/>
               URL completa (local): {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
-              URL completa do Chatwoot (origem): {typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A'}<br/>
-              referrer pathname: {refCtx?.pathname || 'N/A'}<br/>
+              URL completa do Chatwoot (origem): {parentPathInfo?.href || (typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A')}<br/>
+              referrer pathname: {parentPathInfo?.pathname || refCtx?.pathname || 'N/A'}<br/>
               <br/>
               <strong>🎯 chatwoot_origin Detectado:</strong><br/>
               chatwoot_origin = {refCtx?.chatwootOrigin || '❌ não detectado'}<br/>
