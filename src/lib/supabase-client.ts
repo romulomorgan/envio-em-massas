@@ -26,7 +26,8 @@ export async function supaUpload(file: File, blockType: string) {
       .from(SUPABASE_BUCKET)
       .upload(fileName, file, { 
         cacheControl: '3600', 
-        upsert: false
+        upsert: false,
+        contentType: file.type || 'application/octet-stream'
       });
 
     if (error) {

@@ -196,6 +196,7 @@ const Index = () => {
   const [sending, setSending] = useState(false);
   const [editingQueueId, setEditingQueueId] = useState<string | number | null>(null);
   const [currentTab, setCurrentTab] = useState<'criar' | 'acompanhar'>('criar');
+  const [editMode, setEditMode] = useState<'none' | 'edit' | 'clone'>('none');
   
   // Confirmações de exclusão
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; type: string; id?: string; callback?: () => void }>({ show: false, type: '' });
@@ -1143,6 +1144,7 @@ const Index = () => {
       setCampaignName('Campanha');
       setSelectedProfileId('');
       setEditingQueueId(null);
+      setEditMode('none');
       
       // Vai para aba de acompanhar envios
       setCurrentTab('acompanhar');
@@ -1154,6 +1156,21 @@ const Index = () => {
     } finally {
       setSending(false);
     }
+  }
+
+  function handleCancelEditClone() {
+    // Resetar todos os campos e voltar ao monitor
+    setBlocks([]);
+    setContacts([]);
+    setSelectedContacts([]);
+    setSchedule('');
+    setCampaignName('Campanha');
+    setSelectedProfileId('');
+    setEditingQueueId(null);
+    setEditMode('none');
+    setCurrentTab('acompanhar');
+    setTab('monitor');
+    setStatus('Edição/clone cancelado.');
   }
 
   // ========== FUNÇÕES DO MONITOR ==========
@@ -1349,8 +1366,9 @@ const Index = () => {
         setContactVariance(data.payload_json.delays.contactVariance || 10);
       }
       
-      // Limpar ID de edição
+      // Limpar ID de edição e marcar modo
       setEditingQueueId(null);
+      setEditMode('clone');
       
       // Mudar para aba de criar campanha
       setCurrentTab('criar');
@@ -1425,8 +1443,9 @@ const Index = () => {
         setContactVariance(data.payload_json.delays.contactVariance || 10);
       }
       
-      // Guardar ID para atualização
+      // Guardar ID para atualização e marcar modo
       setEditingQueueId(queueId);
+      setEditMode('edit');
       
       // Mudar para aba de criar campanha
       setCurrentTab('criar');
@@ -2226,17 +2245,28 @@ const Index = () => {
                       ⚠️ Complete todos os campos obrigatórios: perfil, contatos e mensagens
                     </div>
                   )}
-                  <button
-                    className={`btn-custom flex-1 w-full transition-all ${
-                      isFormValid 
-                        ? 'bg-primary hover:bg-primary/90 text-primary-foreground' 
-                        : 'bg-muted text-muted-foreground cursor-not-allowed'
-                    }`}
-                    onClick={handleSend}
-                    disabled={sending || !isFormValid}
-                  >
-                    {sending ? 'Criando campanha...' : schedule ? 'Agendar envio' : 'Enviar agora'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      className={`btn-custom flex-1 transition-all ${
+                        isFormValid 
+                          ? 'bg-primary hover:bg-primary/90 text-primary-foreground' 
+                          : 'bg-muted text-muted-foreground cursor-not-allowed'
+                      }`}
+                      onClick={handleSend}
+                      disabled={sending || !isFormValid}
+                    >
+                      {sending ? 'Criando campanha...' : schedule ? 'Agendar envio' : 'Enviar agora'}
+                    </button>
+                    {editMode !== 'none' && (
+                      <button
+                        type="button"
+                        className="btn-custom flex-1 btn-ghost-custom"
+                        onClick={handleCancelEditClone}
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2277,7 +2307,7 @@ const Index = () => {
                             <td className="px-4 py-2 text-sm font-medium">{q.name}</td>
                             <td className="px-4 py-2">
                               <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                                q.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                                (q.status === 'completed' || q.status === 'done') ? 'badge-done' :
                                 q.status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
                                 q.status === 'scheduled' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
                                 q.status === 'paused' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :

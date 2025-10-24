@@ -193,6 +193,13 @@ All colors MUST be HSL.
     @apply inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-bold text-xs border border-border bg-secondary text-secondary-foreground;
   }
   
+  /* Status badges */
+  .badge-done {
+    background-color: hsl(var(--ok) / 0.2);
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--ok) / 0.35);
+  }
+  
   .tab-custom {
     @apply px-3.5 py-2.5 rounded-t-xl border border-transparent transition-colors;
   }
