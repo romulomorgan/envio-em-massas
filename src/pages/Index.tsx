@@ -530,7 +530,7 @@ const Index = () => {
         name: r.name || r.profile_name || 'Perfil',
         evo_base_url: r.evo_base_url || '',
         evo_instance: r.evo_instance || '',
-        evo_token: r.evo_token || '',
+        evo_apikey: r.evo_apikey || '',
         chatwoot_origin: r.chatwoot_origin,
         account_id: r.account_id,
         inbox_id: r.inbox_id,
@@ -548,7 +548,7 @@ const Index = () => {
         name: p.name,
         evo_base_url: p.evo_base_url ? '✅' : '❌',
         evo_instance: p.evo_instance ? '✅' : '❌',
-        evo_token: p.evo_token ? '✅' : '❌',
+        evo_apikey: p.evo_apikey ? '✅' : '❌',
         is_active: p.is_active
       })));
       
@@ -976,9 +976,9 @@ const Index = () => {
       return;
     }
 
-    if (!selectedProfile.evo_token) {
-      setStatus('❌ Perfil sem token configurado (evo_token).');
-      console.error('[handleSend] Perfil sem evo_token:', selectedProfile);
+    if (!selectedProfile.evo_apikey) {
+      setStatus('❌ Perfil sem token configurado (evo_apikey).');
+      console.error('[handleSend] Perfil sem evo_apikey:', selectedProfile);
       return;
     }
 
@@ -1019,7 +1019,7 @@ const Index = () => {
         profile: {
           evo_base_url: selectedProfile.evo_base_url,
           evo_instance: selectedProfile.evo_instance,
-          evo_token: selectedProfile.evo_token
+          evo_token: selectedProfile.evo_apikey
         },
         blocks: blocksForPayload,
         contacts: shuffledContacts

@@ -34,7 +34,7 @@ export interface Profile {
   name: string;
   evo_base_url?: string;
   evo_instance?: string;
-  evo_token?: string;
+  evo_apikey?: string;
   chatwoot_origin?: string;
   account_id?: string | number;
   inbox_id?: string | number;
