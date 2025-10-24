@@ -250,57 +250,78 @@ const Index = () => {
     loadTenantConfig();
   }, [originCanon, accountId]);
 
-  // Detecta account_id e inbox_id a partir da URL atual (query, hash e pathname)
+  // Detecta account_id, inbox_id e conversation_id da URL usando DOM e regex
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    
     try {
-      const u = new URL(window.location.href);
+      const currentUrl = window.location.href;
+      console.log('[URL Detection] Current URL:', currentUrl);
+      
+      const u = new URL(currentUrl);
+      
+      // 1. Tenta extrair da query string
       const params = u.searchParams;
+      let acc = params.get('account_id') || params.get('accountId') || params.get('account') || params.get('acc') || '';
+      let inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
+      let conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
 
-      const acc = params.get('account_id') || params.get('accountId') || params.get('account') || params.get('acc') || '';
-      const inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
-      const conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
+      // 2. Tenta extrair do hash
+      if (u.hash) {
+        const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
+        if (!acc) acc = hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
+        if (!inbox) inbox = hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
+        if (!conv) conv = hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
+      }
 
+      // 3. Tenta extrair do pathname usando regex
+      // Padrão: /app/accounts/{account_id}/inbox/{inbox_id}/conversations/{conversation_id}
+      if (!acc) {
+        const accountMatch = u.pathname.match(/\/accounts?\/(\d+)/i);
+        if (accountMatch) acc = accountMatch[1];
+      }
+      if (!inbox) {
+        const inboxMatch = u.pathname.match(/\/inbox(?:es)?\/(\d+)/i);
+        if (inboxMatch) inbox = inboxMatch[1];
+      }
+      if (!conv) {
+        const convMatch = u.pathname.match(/\/conversations?\/(\d+)/i);
+        if (convMatch) conv = convMatch[1];
+      }
+
+      console.log('[URL Detection] Extracted:', { acc, inbox, conv });
+      
       if (acc) setAccountId(acc);
       if (inbox) setInboxId(inbox);
       if (conv) setConversationId(conv);
-
-      if ((!acc || !inbox || !conv) && u.hash) {
-        const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
-        const acc2 = hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
-        const inbox2 = hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
-        const conv2 = hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
-        if (!acc && acc2) setAccountId(acc2);
-        if (!inbox && inbox2) setInboxId(inbox2);
-        if (!conv && conv2) setConversationId(conv2);
-      }
-
-      const parts = u.pathname.split('/').filter(Boolean);
-      if (!acc) {
-        const ai = parts.findIndex(p => p.toLowerCase() === 'accounts' || p.toLowerCase() === 'account');
-        if (ai >= 0 && parts[ai + 1]) setAccountId(parts[ai + 1]);
-      }
-      if (!inbox) {
-        const ii = parts.findIndex(p => p.toLowerCase() === 'inbox' || p.toLowerCase() === 'inboxes');
-        if (ii >= 0 && parts[ii + 1]) setInboxId(parts[ii + 1]);
-      }
-      if (!conv) {
-        const ci = parts.findIndex(p => p.toLowerCase() === 'conversations' || p.toLowerCase() === 'conversation');
-        if (ci >= 0 && parts[ci + 1]) setConversationId(parts[ci + 1]);
-      }
-    } catch {}
+      
+    } catch (e) {
+      console.error('[URL Detection] Error:', e);
+    }
   }, []);
 
-  // Carregar perfis
+  // Carregar perfis do NocoDB
   async function loadProfiles() {
+    if (!originCanon || !accountId) {
+      console.log('[Perfis] Aguardando originCanon e accountId...', { originCanon, accountId });
+      return;
+    }
+    
     setLoadingProfiles(true);
     setProfilesError('');
+    
     try {
       const where = `(chatwoot_origin,eq,${originCanon})~and(account_id,eq,${accountId})`;
       const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?where=${encodeURIComponent(where)}&limit=1000`;
+      
+      console.log('[Perfis] Consultando NocoDB:', { originCanon, accountId, url });
+      
       const data = await nocoGET(url);
       const list = Array.isArray(data?.list) ? data.list : [];
-      setProfiles(list.map((r: any) => ({
+      
+      console.log('[Perfis] Resposta NocoDB:', { total: list.length, list });
+      
+      const mappedProfiles = list.map((r: any) => ({
         Id: r.Id,
         name: r.name || r.profile_name || 'Perfil',
         origin: r.origin,
@@ -308,10 +329,15 @@ const Index = () => {
         account_id: r.account_id,
         inbox_id: r.inbox_id,
         admin_apikey: r.admin_apikey || r.adimin_apikey || ''
-      })));
+      }));
+      
+      setProfiles(mappedProfiles);
       setStatus(`${list.length} perfil(is) carregado(s).`);
+      
+      console.log('[Perfis] Perfis carregados:', mappedProfiles);
+      
     } catch (err: any) {
-      console.error('Erro ao carregar perfis:', err);
+      console.error('[Perfis] Erro ao carregar:', err);
       setProfilesError(err.message || 'Falha ao carregar perfis');
       setStatus('Erro ao carregar perfis.');
     } finally {
@@ -867,27 +893,43 @@ const Index = () => {
           </p>
 
           <details className="mb-3">
-            <summary className="underline text-sm text-muted-foreground cursor-pointer">DEBUG</summary>
-            <div className="mt-2 font-mono text-xs text-muted-foreground">
-              origin = {origin} (norm: {originNo}) (canon: {originCanon})<br/>
-              accountId = {accountId} | inboxId = {inboxId} | conversationId = {conversationId}<br/>
-              admin_api_key (tenant) = {(typeof window !== 'undefined' && (window as any).__ADMIN_APIKEY__) || 'não definido'}<br/>
-              perfis carregados = {profiles.length}<br/>
-              {profiles.length > 0 && (
-                <>
-                  <br/>
-                  <strong>Perfis detectados:</strong><br/>
-                  {profiles.map((p, i) => (
-                    <span key={p.Id}>
-                      [{i+1}] Id={p.Id} | name="{p.name}" | account_id={p.account_id} | admin_apikey={p.admin_apikey || 'não definido'}<br/>
-                    </span>
-                  ))}
-                </>
-              )}
+            <summary className="underline text-sm text-muted-foreground cursor-pointer">DEBUG - Detecção de URL e Perfis</summary>
+            <div className="mt-2 font-mono text-xs text-muted-foreground whitespace-pre-wrap">
+              <strong>🌐 URL Detectada:</strong><br/>
+              URL completa: {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
+              origin = {origin}<br/>
+              originNo (normalizado) = {originNo}<br/>
+              originCanon (canônico) = {originCanon}<br/>
               <br/>
+              <strong>🔑 IDs Extraídos:</strong><br/>
+              accountId = {accountId || '❌ não detectado'}<br/>
+              inboxId = {inboxId || '❌ não detectado'}<br/>
+              conversationId = {conversationId || '❌ não detectado'}<br/>
+              <br/>
+              <strong>🔐 Tenant Config:</strong><br/>
+              admin_api_key (tenant) = {(typeof window !== 'undefined' && (window as any).__ADMIN_APIKEY__) || '❌ não definido'}<br/>
+              tenant configurado = {tenantConfig ? '✅ sim' : '❌ não'}<br/>
+              <br/>
+              <strong>📋 Perfis Carregados: {profiles.length}</strong><br/>
+              {loadingProfiles && '⏳ Carregando perfis...\n'}
+              {profilesError && `❌ Erro: ${profilesError}\n`}
+              {profiles.length === 0 && !loadingProfiles && '⚠️ Nenhum perfil encontrado\n'}
+              {profiles.length > 0 && profiles.map((p, i) => (
+                <span key={p.Id}>
+                  [{i+1}] <strong>{p.name}</strong><br/>
+                  &nbsp;&nbsp;&nbsp;• Id: {p.Id}<br/>
+                  &nbsp;&nbsp;&nbsp;• account_id: {p.account_id}<br/>
+                  &nbsp;&nbsp;&nbsp;• inbox_id: {p.inbox_id || 'N/A'}<br/>
+                  &nbsp;&nbsp;&nbsp;• chatwoot_origin: {p.chatwoot_origin || 'N/A'}<br/>
+                  &nbsp;&nbsp;&nbsp;• admin_apikey: {p.admin_apikey ? '✅ definido' : '❌ não definido'}<br/>
+                </span>
+              ))}
+              <br/>
+              <strong>📊 Outros Dados:</strong><br/>
               empreendimentos = {empreendimentos.length}<br/>
-              supabase = {tenantConfig ? 'configurado' : 'não'} | uploader = {(typeof window !== 'undefined' && (window as any).__UPLOADER_URL__) ? 'configurado' : 'não'}<br/>
-              noco: url={NOCO_URL}
+              supabase = {tenantConfig ? '✅ configurado' : '❌ não'}<br/>
+              uploader = {(typeof window !== 'undefined' && (window as any).__UPLOADER_URL__) ? '✅ configurado' : '❌ não'}<br/>
+              noco_url = {NOCO_URL}
             </div>
           </details>
           
