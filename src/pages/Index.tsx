@@ -198,73 +198,96 @@ const Index = () => {
 
   // Carregar configuração do tenant
   async function loadTenantConfig() {
-    try {
-      const baseUrl = NOCO_URL;
-      const originA = originCanon;
-      const originB = originNo;
+    if (!originCanon) {
+      console.log('[tenantConfig] Aguardando originCanon...');
+      return null;
+    }
 
+    try {
+      console.log('[tenantConfig] Buscando tenant:', { originCanon, accountId });
+      const baseUrl = NOCO_URL;
       let data: any = null;
 
+      // Se temos account_id, busca com ambos os filtros
       if (accountId) {
-        const whereA = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originA})`;
-        const urlA = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(whereA)}`;
-        data = await nocoGET(urlA).catch(() => null);
-
-        if (!data || !Array.isArray(data.list) || data.list.length === 0) {
-          const whereB = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originB})`;
-          const urlB = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(whereB)}`;
-          data = await nocoGET(urlB).catch(() => null);
-        }
-      } else {
-        const whereA = `(chatwoot_origin,eq,${originA})`;
-        const urlA = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(whereA)}`;
-        data = await nocoGET(urlA).catch(() => null);
-
-        if (!data || !Array.isArray(data.list) || data.list.length === 0) {
-          const whereB = `(chatwoot_origin,eq,${originB})`;
-          const urlB = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(whereB)}`;
-          data = await nocoGET(urlB).catch(() => null);
-        }
+        const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
+        const url = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(where)}`;
+        console.log('[tenantConfig] URL com account_id:', url);
+        data = await nocoGET(url).catch((err) => {
+          console.error('[tenantConfig] Erro na busca com account_id:', err);
+          return null;
+        });
       }
 
-      const list = (Array.isArray(data?.list) ? data.list : [])
-        .map((r: any) => ({
-          id: String(r.Id ?? r.id ?? ''),
-          chatwoot_origin: (r.chatwoot_origin || '').trim(),
-          account_id: String(r.account_id ?? ''),
-          is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
-          cv_activa: !!(r.cv_activa === true || r.cv_activa === 'true' || r.cv_activa === 1 || r.cv_active === true || r.cv_active === 'true' || r.cv_active === 1),
-          admin_apikey: r.admin_apikey || r.adimin_apikey || '',
-          cv_email: r.cv_email || '',
-          cv_apikey: r.cv_apikey || '',
-          default: !!r.default
-        }))
-        .filter((r: any) => canonOrigin(r.chatwoot_origin) === originCanon && (!accountId || String(r.account_id) === String(accountId)));
+      // Se não encontrou com account_id ou não tem account_id, busca só pelo origin
+      if (!data || !Array.isArray(data.list) || data.list.length === 0) {
+        const where = `(chatwoot_origin,eq,${originCanon})`;
+        const url = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(where)}`;
+        console.log('[tenantConfig] URL sem account_id:', url);
+        data = await nocoGET(url).catch((err) => {
+          console.error('[tenantConfig] Erro na busca sem account_id:', err);
+          return null;
+        });
+      }
 
-      if (!list.length) {
+      const list = (Array.isArray(data?.list) ? data.list : []).map((r: any) => ({
+        id: String(r.Id ?? r.id ?? ''),
+        chatwoot_origin: (r.chatwoot_origin || '').trim(),
+        account_id: String(r.account_id ?? ''),
+        is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
+        cv_activa: !!(r.cv_activa === true || r.cv_activa === 'true' || r.cv_activa === 1 || r.cv_active === true || r.cv_active === 'true' || r.cv_active === 1),
+        admin_apikey: r.admin_apikey || r.adimin_apikey || '',
+        cv_email: r.cv_email || '',
+        cv_apikey: r.cv_apikey || '',
+        default: !!r.default
+      }));
+
+      console.log('[tenantConfig] Lista recebida:', list);
+
+      // Filtra pelo accountId se disponível
+      const filtered = accountId 
+        ? list.filter((r: any) => String(r.account_id) === String(accountId))
+        : list;
+
+      if (!filtered.length) {
+        console.log('[tenantConfig] ❌ Nenhum tenant encontrado');
         setTenantConfig(null);
         setHasChatwootAccess(false);
         setHasCvAccess(false);
         return null;
       }
 
-      const chosen = list.find((x: any) => x.default) || list[0];
+      const chosen = filtered.find((x: any) => x.default) || filtered[0];
+      console.log('[tenantConfig] ✅ Tenant escolhido:', chosen);
+
+      // Atualiza accountId se não estava definido
       if (!accountId && chosen && chosen.account_id) {
+        console.log('[tenantConfig] Definindo accountId:', chosen.account_id);
         setAccountId(String(chosen.account_id));
       }
+
       setTenantConfig(chosen);
       setHasChatwootAccess(!!(chosen.admin_apikey) && chosen.is_active === true);
       setHasCvAccess(chosen.cv_activa || chosen.cv_active);
-      // Expor variáveis globais como no original (forçado)
+
+      // Expor variáveis globais
       if (typeof window !== 'undefined') {
         (window as any).__ADMIN_APIKEY__ = chosen.admin_apikey || '';
         (window as any).__ACCOUNT_ID__ = String(chosen.account_id || accountId || '');
         (window as any).__INBOX_ID__ = String(inboxId || '');
+        (window as any).__CONVERSATION_ID__ = String(conversationId || '');
         (window as any).__FORCE_ORIGIN__ = originCanon;
+        console.log('[tenantConfig] Variáveis globais definidas:', {
+          __ADMIN_APIKEY__: chosen.admin_apikey ? '✅ definido' : '❌ vazio',
+          __ACCOUNT_ID__: chosen.account_id || accountId,
+          __INBOX_ID__: inboxId,
+          __CONVERSATION_ID__: conversationId
+        });
       }
+
       return chosen;
     } catch (e) {
-      console.error('loadTenantConfig error:', e);
+      console.error('[tenantConfig] Erro geral:', e);
       setTenantConfig(null);
       setHasChatwootAccess(false);
       setHasCvAccess(false);
@@ -273,7 +296,9 @@ const Index = () => {
   }
 
   useEffect(() => {
-    loadTenantConfig();
+    if (originCanon) {
+      loadTenantConfig();
+    }
   }, [originCanon, accountId]);
 
   // Helper: extrai IDs do pathname do Chatwoot
@@ -866,22 +891,31 @@ const Index = () => {
   // ========== FUNÇÕES DE ENVIO ==========
 
   async function handleSend() {
+    // Validações
+    if (!tenantConfig || !tenantConfig.admin_apikey) {
+      setStatus('❌ Erro: Configuração do tenant não encontrada. Verifique se o admin_apikey está definido.');
+      return;
+    }
+    if (!accountId) {
+      setStatus('❌ Erro: account_id não detectado. Cole a URL do Chatwoot manualmente na seção DEBUG.');
+      return;
+    }
     if (!selectedProfileId) {
-      setStatus('Selecione um perfil antes de enviar.');
+      setStatus('❌ Selecione um perfil antes de enviar.');
       return;
     }
     if (!selectedContacts.length) {
-      setStatus('Selecione ao menos um contato.');
+      setStatus('❌ Selecione ao menos um contato.');
       return;
     }
     if (!blocks.length) {
-      setStatus('Adicione ao menos um bloco de mensagem.');
+      setStatus('❌ Adicione ao menos um bloco de mensagem.');
       return;
     }
 
     const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
     if (!selectedProfile) {
-      setStatus('Perfil não encontrado.');
+      setStatus('❌ Perfil não encontrado.');
       return;
     }
 
@@ -889,18 +923,27 @@ const Index = () => {
     try {
       const contactsToSend = contacts.filter(c => selectedContacts.includes(c.id));
       
+      // Estrutura do payload seguindo o formato do SERVER.mjs
       const payload = {
         name: campaignName,
-        profile_id: selectedProfile.Id,
-        inbox_id: selectedProfile.inbox_id,
+        status: 'pending',
         scheduled_for: schedule || new Date().toISOString(),
+        profile_id: selectedProfile.Id,
+        account_id: accountId,
+        inbox_id: selectedProfile.inbox_id || inboxId || null,
+        conversation_id: conversationId || null,
+        chatwoot_origin: originCanon,
+        admin_apikey: tenantConfig.admin_apikey,
+        contacts_count: contactsToSend.length,
+        items_count: blocks.length * contactsToSend.length,
+        progress_contact_ix: 0,
         contacts: contactsToSend.map(c => ({
           name: c.name,
           phone: c.phone
         })),
         blocks: blocks.map(b => ({
           type: b.type,
-          action: b.action,
+          action: normalizeAction(b.action),
           data: b.data,
           itemWait: b.itemWait
         })),
@@ -909,16 +952,26 @@ const Index = () => {
           itemVariance,
           contactDelay,
           contactVariance
-        }
+        },
+        defaultCountryCode
       };
 
+      console.log('[handleSend] Payload completo:', payload);
+
       const result = await queueCreate(payload);
+      console.log('[handleSend] Resultado:', result);
       
-      setStatus(`Campanha "${campaignName}" criada com sucesso!`);
+      setStatus(`✅ Campanha "${campaignName}" criada com sucesso! ID: ${result.Id || result.id}`);
       setTab('monitor');
       loadMonitor();
+      
+      // Limpa o formulário após sucesso
+      setBlocks([]);
+      setSelectedContacts([]);
+      setSchedule('');
     } catch (e: any) {
-      setStatus(`Erro ao criar campanha: ${e.message}`);
+      console.error('[handleSend] Erro:', e);
+      setStatus(`❌ Erro ao criar campanha: ${e.message}`);
     } finally {
       setSending(false);
     }
@@ -1102,8 +1155,11 @@ const Index = () => {
               conversationId = {conversationId || '❌ não detectado'}<br/>
               <br/>
               <strong>🔐 Tenant Config:</strong><br/>
-              admin_api_key (tenant) = {(typeof window !== 'undefined' && (window as any).__ADMIN_APIKEY__) || '❌ não definido'}<br/>
+              admin_api_key (tenant) = {tenantConfig?.admin_apikey ? '✅ ' + tenantConfig.admin_apikey.substring(0, 20) + '...' : '❌ não definido'}<br/>
               tenant configurado = {tenantConfig ? '✅ sim' : '❌ não'}<br/>
+              tenant.account_id = {tenantConfig?.account_id || 'N/A'}<br/>
+              tenant.chatwoot_origin = {tenantConfig?.chatwoot_origin || 'N/A'}<br/>
+              tenant.is_active = {tenantConfig?.is_active ? '✅ sim' : '❌ não'}<br/>
               <br/>
               <strong>📋 Perfis Carregados: {profiles.length}</strong><br/>
               {loadingProfiles && '⏳ Carregando perfis...\n'}
