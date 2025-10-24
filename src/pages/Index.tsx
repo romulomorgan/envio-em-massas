@@ -240,6 +240,39 @@ const Index = () => {
 
   useEffect(() => {
     loadTenantConfig();
+  }, [originCanon, accountId]);
+
+  // Detecta account_id e inbox_id a partir da URL atual (query, hash e pathname)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const u = new URL(window.location.href);
+      const params = u.searchParams;
+
+      const acc = params.get('account_id') || params.get('accountId') || params.get('account') || params.get('acc') || '';
+      const inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
+
+      if (acc) setAccountId(acc);
+      if (inbox) setInboxId(inbox);
+
+      if ((!acc || !inbox) && u.hash) {
+        const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
+        const acc2 = hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
+        const inbox2 = hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
+        if (!acc && acc2) setAccountId(acc2);
+        if (!inbox && inbox2) setInboxId(inbox2);
+      }
+
+      const parts = u.pathname.split('/').filter(Boolean);
+      if (!acc) {
+        const ai = parts.findIndex(p => p.toLowerCase() === 'accounts' || p.toLowerCase() === 'account');
+        if (ai >= 0 && parts[ai + 1]) setAccountId(parts[ai + 1]);
+      }
+      if (!inbox) {
+        const ii = parts.findIndex(p => p.toLowerCase() === 'inbox' || p.toLowerCase() === 'inboxes');
+        if (ii >= 0 && parts[ii + 1]) setInboxId(parts[ii + 1]);
+      }
+    } catch {}
   }, []);
 
   // Carregar perfis
@@ -1234,13 +1267,6 @@ const Index = () => {
                         {/* Image */}
                         {block.type === 'image' && (
                           <div className="space-y-2">
-                            <Field label="URL da imagem">
-                              <EmojiInput
-                                value={block.data.url || ''}
-                                onChange={(url) => updateBlockData(block.id, { url })}
-                                placeholder="https://..."
-                              />
-                            </Field>
                             <Field label="Legenda (opcional)">
                               <EmojiTextarea
                                 value={block.data.caption || ''}
@@ -1263,13 +1289,6 @@ const Index = () => {
                         {/* Video */}
                         {block.type === 'video' && (
                           <div className="space-y-2">
-                            <Field label="URL do vídeo">
-                              <EmojiInput
-                                value={block.data.url || ''}
-                                onChange={(url) => updateBlockData(block.id, { url })}
-                                placeholder="https://..."
-                              />
-                            </Field>
                             <Field label="Legenda (opcional)">
                               <EmojiTextarea
                                 value={block.data.caption || ''}
@@ -1292,13 +1311,6 @@ const Index = () => {
                         {/* Audio */}
                         {block.type === 'audio' && (
                           <div className="space-y-2">
-                            <Field label="URL do áudio">
-                              <EmojiInput
-                                value={block.data.url || ''}
-                                onChange={(url) => updateBlockData(block.id, { url })}
-                                placeholder="https://..."
-                              />
-                            </Field>
                             <FileUpload
                               blk={block}
                               accept="audio/*"
@@ -1314,13 +1326,6 @@ const Index = () => {
                         {/* Document */}
                         {block.type === 'document' && (
                           <div className="space-y-2">
-                            <Field label="URL do documento">
-                              <EmojiInput
-                                value={block.data.url || ''}
-                                onChange={(url) => updateBlockData(block.id, { url })}
-                                placeholder="https://..."
-                              />
-                            </Field>
                             <Field label="Nome do arquivo">
                               <input
                                 className="input-custom"
