@@ -7,6 +7,16 @@ import { EmojiTextarea } from '@/components/EmojiTextarea';
 import { Pause, X, Download, Copy, Edit, Trash2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { EmojiInput } from '@/components/EmojiInput';
 import { WAPreview } from '@/components/WAPreview';
 import { FileUpload } from '@/components/FileUpload';
@@ -26,6 +36,7 @@ import {
   isHttpUrl,
   normalizeAction
 } from '@/lib/utils-envio';
+import { supaRemove } from '@/lib/supabase-client';
 import {
   WEBHOOK_LIST_USERS,
   WEBHOOK_LIST_ENTS,
@@ -185,6 +196,9 @@ const Index = () => {
   const [sending, setSending] = useState(false);
   const [editingQueueId, setEditingQueueId] = useState<string | number | null>(null);
   const [currentTab, setCurrentTab] = useState<'criar' | 'acompanhar'>('criar');
+  
+  // Confirmações de exclusão
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; type: string; id?: string; callback?: () => void }>({ show: false, type: '' });
   
   // Handler para download de contatos
   const handleDownloadContacts = (format: 'csv' | 'xls' | 'xlsx') => {
@@ -874,15 +888,28 @@ const Index = () => {
   }
 
   function removeContact(id: string) {
-    setContacts(prev => prev.filter(c => c.id !== id));
-    setSelectedContacts(prev => prev.filter(cid => cid !== id));
+    setDeleteConfirm({
+      show: true,
+      type: 'contact',
+      id,
+      callback: () => {
+        setContacts(prev => prev.filter(c => c.id !== id));
+        setSelectedContacts(prev => prev.filter(cid => cid !== id));
+        setDeleteConfirm({ show: false, type: '' });
+      }
+    });
   }
 
   function clearAllContacts() {
-    if (confirm('Remover todos os contatos da lista?')) {
-      setContacts([]);
-      setSelectedContacts([]);
-    }
+    setDeleteConfirm({
+      show: true,
+      type: 'all-contacts',
+      callback: () => {
+        setContacts([]);
+        setSelectedContacts([]);
+        setDeleteConfirm({ show: false, type: '' });
+      }
+    });
   }
 
   function toggleSelectAll() {
@@ -923,7 +950,17 @@ const Index = () => {
     setBlocks(prev => [...prev, newBlock]);
   }
 
-  function removeBlock(id: string) {
+  async function removeBlock(id: string) {
+    // Busca o bloco para excluir o arquivo do Supabase se existir
+    const block = blocks.find(b => b.id === id);
+    if (block?.data?._supaPath) {
+      try {
+        await supaRemove(block.data._supaPath);
+        console.log('[removeBlock] Arquivo removido do Supabase:', block.data._supaPath);
+      } catch (e) {
+        console.error('[removeBlock] Erro ao remover arquivo do Supabase:', e);
+      }
+    }
     setBlocks(prev => prev.filter(b => b.id !== id));
   }
 
@@ -1097,13 +1134,20 @@ const Index = () => {
       console.log('[handleSend] Resultado:', result);
       
       setStatus(`✅ Campanha "${campaignName}" criada com sucesso! ID: ${result.Id || result.id}`);
-      setTab('monitor');
-      loadMonitor();
       
-      // Limpa o formulário após sucesso
+      // Limpa TODOS os campos após sucesso
       setBlocks([]);
+      setContacts([]);
       setSelectedContacts([]);
       setSchedule('');
+      setCampaignName('Campanha');
+      setSelectedProfileId('');
+      setEditingQueueId(null);
+      
+      // Vai para aba de acompanhar envios
+      setCurrentTab('acompanhar');
+      setTab('monitor');
+      loadMonitor();
     } catch (e: any) {
       console.error('[handleSend] Erro:', e);
       setStatus(`❌ Erro ao criar campanha: ${e.message}`);
@@ -1176,14 +1220,21 @@ const Index = () => {
   }, [tab, accountId, originCanon]);
 
   async function handleDeleteQueue(queueId: string | number) {
-    if (!confirm('Deseja realmente excluir esta campanha?')) return;
-    try {
-      await queueDelete(queueId);
-      setStatus('Campanha excluída.');
-      loadMonitor();
-    } catch (e: any) {
-      setStatus(`Erro ao excluir: ${e.message}`);
-    }
+    setDeleteConfirm({
+      show: true,
+      type: 'campaign',
+      callback: async () => {
+        try {
+          await queueDelete(queueId);
+          setStatus('Campanha excluída.');
+          loadMonitor();
+          setDeleteConfirm({ show: false, type: '' });
+        } catch (e: any) {
+          setStatus(`Erro ao excluir: ${e.message}`);
+          setDeleteConfirm({ show: false, type: '' });
+        }
+      }
+    });
   }
 
   async function handlePauseQueue(queueId: string | number) {
@@ -1247,20 +1298,62 @@ const Index = () => {
       const data = await queueGetOne(queueId);
       if (!data) return;
       
-      // Carregar os dados da campanha no formulário
+      // Carregar perfil se disponível
+      if (data.payload_json?.profile) {
+        const profile = profiles.find(p => 
+          p.evo_base_url === data.payload_json.profile.evo_base_url &&
+          p.evo_instance === data.payload_json.profile.evo_instance
+        );
+        if (profile) {
+          setSelectedProfileId(String(profile.Id));
+        }
+      }
+      
+      // Carregar nome da campanha
       setCampaignName(data.name + ' (cópia)');
       setSchedule('');
       
-      // Carregar contatos
-      const contactsList = JSON.parse(data.contacts || '[]');
-      const contactIds = contactsList.map((c: any) => c.id);
-      setSelectedContacts(contactIds);
+      // Carregar contatos completos do payload_json
+      const contactsList = data.payload_json?.contacts || [];
+      const importedContacts: Contact[] = contactsList.map((c: any) => ({
+        id: uid(),
+        name: c.name || 'Sem nome',
+        phone: c.phone || '',
+        tags: c.tags || '',
+        srcImported: c.srcImported,
+        srcLabel: c.srcLabel,
+        srcGroup: c.srcGroup,
+        srcEmp: c.srcEmp
+      }));
       
-      // Carregar blocos
-      const blocksList = JSON.parse(data.blocks || '[]');
-      setBlocks(blocksList);
+      setContacts(importedContacts);
+      setSelectedContacts(importedContacts.map(c => c.id));
+      
+      // Carregar blocos completos do payload_json
+      const blocksList = data.payload_json?.blocks || [];
+      const importedBlocks: Block[] = blocksList.map((b: any) => ({
+        id: uid(),
+        type: b.type,
+        action: b.action || 'sendMessage',
+        data: b.data || {},
+        itemWait: b.itemWait || 0
+      }));
+      
+      setBlocks(importedBlocks);
+      
+      // Carregar delays do payload_json
+      if (data.payload_json?.delays) {
+        setItemDelay(data.payload_json.delays.itemDelay || 3);
+        setItemVariance(data.payload_json.delays.itemVariance || 4);
+        setContactDelay(data.payload_json.delays.contactDelay || 10);
+        setContactVariance(data.payload_json.delays.contactVariance || 10);
+      }
+      
+      // Limpar ID de edição
+      setEditingQueueId(null);
       
       // Mudar para aba de criar campanha
+      setCurrentTab('criar');
       setTab('direct');
       setStatus('Campanha clonada! Faça as alterações desejadas.');
     } catch (e: any) {
@@ -1273,25 +1366,72 @@ const Index = () => {
       const data = await queueGetOne(queueId);
       if (!data) return;
       
-      // Carregar os dados da campanha no formulário
+      // Carregar perfil se disponível
+      if (data.payload_json?.profile) {
+        const profile = profiles.find(p => 
+          p.evo_base_url === data.payload_json.profile.evo_base_url &&
+          p.evo_instance === data.payload_json.profile.evo_instance
+        );
+        if (profile) {
+          setSelectedProfileId(String(profile.Id));
+        }
+      }
+      
+      // Carregar nome da campanha
       setCampaignName(data.name);
-      setSchedule(data.scheduled_for ? data.scheduled_for.substring(0, 16) : '');
       
-      // Carregar contatos
-      const contactsList = JSON.parse(data.contacts || '[]');
-      const contactIds = contactsList.map((c: any) => c.id);
-      setSelectedContacts(contactIds);
+      // Carregar agendamento
+      if (data.scheduled_for) {
+        const dt = new Date(data.scheduled_for);
+        const localISO = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString();
+        setSchedule(localISO.substring(0, 16));
+      } else {
+        setSchedule('');
+      }
       
-      // Carregar blocos
-      const blocksList = JSON.parse(data.blocks || '[]');
-      setBlocks(blocksList);
+      // Carregar contatos completos do payload_json
+      const contactsList = data.payload_json?.contacts || [];
+      const importedContacts: Contact[] = contactsList.map((c: any) => ({
+        id: uid(),
+        name: c.name || 'Sem nome',
+        phone: c.phone || '',
+        tags: c.tags || '',
+        srcImported: c.srcImported,
+        srcLabel: c.srcLabel,
+        srcGroup: c.srcGroup,
+        srcEmp: c.srcEmp
+      }));
+      
+      setContacts(importedContacts);
+      setSelectedContacts(importedContacts.map(c => c.id));
+      
+      // Carregar blocos completos do payload_json
+      const blocksList = data.payload_json?.blocks || [];
+      const importedBlocks: Block[] = blocksList.map((b: any) => ({
+        id: uid(),
+        type: b.type,
+        action: b.action || 'sendMessage',
+        data: b.data || {},
+        itemWait: b.itemWait || 0
+      }));
+      
+      setBlocks(importedBlocks);
+      
+      // Carregar delays do payload_json
+      if (data.payload_json?.delays) {
+        setItemDelay(data.payload_json.delays.itemDelay || 3);
+        setItemVariance(data.payload_json.delays.itemVariance || 4);
+        setContactDelay(data.payload_json.delays.contactDelay || 10);
+        setContactVariance(data.payload_json.delays.contactVariance || 10);
+      }
       
       // Guardar ID para atualização
       setEditingQueueId(queueId);
       
       // Mudar para aba de criar campanha
+      setCurrentTab('criar');
       setTab('direct');
-      setStatus('Editando campanha. Faça as alterações e clique em Agendar.');
+      setStatus('Editando campanha. Faça as alterações e clique em Enviar para salvar.');
     } catch (e: any) {
       setStatus(`Erro ao editar: ${e.message}`);
     }
@@ -1306,6 +1446,18 @@ const Index = () => {
       setStatus(`Erro ao cancelar: ${e.message}`);
     }
   }
+
+  // ========== VALIDAÇÃO ==========
+  
+  const isFormValid = useMemo(() => {
+    return !!(
+      selectedProfileId &&
+      selectedContacts.length > 0 &&
+      blocks.length > 0 &&
+      tenantConfig &&
+      tenantConfig.admin_apikey
+    );
+  }, [selectedProfileId, selectedContacts, blocks, tenantConfig]);
 
   // ========== FILTROS E ORDENAÇÃO ==========
 
@@ -1710,11 +1862,16 @@ const Index = () => {
                               <td className="px-4 py-2 text-sm">{contact.name}</td>
                               <td className="px-4 py-2 text-sm font-mono">{formatPhoneLocal(contact.phone)}</td>
                               <td className="px-4 py-2 text-sm text-muted-foreground">{contact.tags || '-'}</td>
-                              <td className="px-4 py-2">
-                                <SmallBtn onClick={() => removeContact(contact.id)} variant="destructive">
-                                  Remover
-                                </SmallBtn>
-                              </td>
+                               <td className="px-4 py-2">
+                                 <Button
+                                   size="sm"
+                                   variant="ghost"
+                                   className="text-destructive hover:text-destructive"
+                                   onClick={() => removeContact(contact.id)}
+                                 >
+                                   <X className="h-4 w-4" />
+                                 </Button>
+                               </td>
                             </tr>
                           ))}
                           {!visibleContacts.length && (
@@ -1793,9 +1950,22 @@ const Index = () => {
                             <SmallBtn onClick={() => duplicateBlock(block.id)} variant="secondary" title="Duplicar">
                               📋
                             </SmallBtn>
-                            <SmallBtn onClick={() => removeBlock(block.id)} variant="destructive" title="Remover">
-                              ×
-                            </SmallBtn>
+                             <SmallBtn 
+                               onClick={() => {
+                                 setDeleteConfirm({
+                                   show: true,
+                                   type: 'block',
+                                   callback: () => {
+                                     removeBlock(block.id);
+                                     setDeleteConfirm({ show: false, type: '' });
+                                   }
+                                 });
+                               }} 
+                               variant="destructive" 
+                               title="Remover"
+                             >
+                               ×
+                             </SmallBtn>
                           </div>
                         </div>
 
@@ -2050,11 +2220,20 @@ const Index = () => {
                   </Field>
                 </div>
 
-                <div className="mt-6 flex gap-3">
+                <div className="mt-6 space-y-3">
+                  {!isFormValid && (
+                    <div className="text-sm text-orange-600 bg-orange-50 dark:bg-orange-950/30 px-4 py-3 rounded-lg">
+                      ⚠️ Complete todos os campos obrigatórios: perfil, contatos e mensagens
+                    </div>
+                  )}
                   <button
-                    className="btn-custom btn-custom-primary flex-1"
+                    className={`btn-custom flex-1 w-full transition-all ${
+                      isFormValid 
+                        ? 'bg-primary hover:bg-primary/90 text-primary-foreground' 
+                        : 'bg-muted text-muted-foreground cursor-not-allowed'
+                    }`}
                     onClick={handleSend}
-                    disabled={sending || !selectedProfileId || !selectedContacts.length || !blocks.length}
+                    disabled={sending || !isFormValid}
                   >
                     {sending ? 'Criando campanha...' : schedule ? 'Agendar envio' : 'Enviar agora'}
                   </button>
@@ -2247,6 +2426,32 @@ const Index = () => {
           <div className="mt-6 text-xs text-muted-foreground">{status}</div>
         </div>
       </div>
+      
+      {/* AlertDialog para confirmações de exclusão */}
+      <AlertDialog open={deleteConfirm.show} onOpenChange={(open) => !open && setDeleteConfirm({ show: false, type: '' })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirm.type === 'contact' && 'Deseja realmente remover este contato da lista?'}
+              {deleteConfirm.type === 'all-contacts' && 'Deseja realmente remover TODOS os contatos da lista? Esta ação não pode ser desfeita.'}
+              {deleteConfirm.type === 'block' && 'Deseja realmente excluir este bloco de mensagem? O arquivo será removido do armazenamento.'}
+              {deleteConfirm.type === 'campaign' && 'Deseja realmente excluir esta campanha? Esta ação não pode ser desfeita.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirm({ show: false, type: '' })}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteConfirm.callback?.()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Confirmar exclusão
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

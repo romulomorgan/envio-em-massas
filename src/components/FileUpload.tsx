@@ -9,9 +9,10 @@ interface FileUploadProps {
   onUploaded?: (info: { url: string; name: string; type: string; path: string | null }) => void;
   onUploadComplete?: (url: string) => void;
   onError?: (msg: string) => void;
+  onRemoved?: () => void;
 }
 
-export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError }: FileUploadProps) {
+export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError, onRemoved }: FileUploadProps) {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const inputId = `file-input-${blk?.id || uid()}`;
@@ -67,6 +68,9 @@ export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError 
       setStatus('Arquivo removido');
       if (onUploaded) {
         onUploaded({ url: '', name: '', type: '', path: null });
+      }
+      if (onRemoved) {
+        onRemoved();
       }
     } catch (err: any) {
       console.error('[FileUpload] Erro ao remover:', err);
