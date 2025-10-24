@@ -20,40 +20,57 @@ export function EmojiTextarea({ value, onChange, minHeight = 120, placeholder }:
     '⭐', '🌟', '✨', '💫', '🔥', '💥', '⚡', '☀️', '🌙', '⭐', '🌈', '☁️', '⛅', '🌤️', '⛈️', '🌧️'
   ];
 
-  const insertEmoji = (emoji: string) => {
+  const insertText = (text: string) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const newValue = value.substring(0, start) + emoji + value.substring(end);
-
+    const newValue = value.substring(0, start) + text + value.substring(end);
     onChange(newValue);
-
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(start + emoji.length, start + emoji.length);
+      textarea.setSelectionRange(start + text.length, start + text.length);
     }, 0);
   };
+
+  const insertEmoji = (emoji: string) => insertText(emoji);
 
   return (
     <div className="relative">
       <textarea
         ref={textareaRef}
-        className="input-custom resize-none"
+        className="input-custom resize-none pr-28"
         style={{ minHeight }}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
       />
-      <button
-        type="button"
-        className="absolute right-2 top-2 w-8 h-8 rounded-lg bg-secondary hover:bg-accent border border-border flex items-center justify-center text-lg transition-colors"
-        onClick={() => setShowPicker(!showPicker)}
-        title="Adicionar emoji"
-      >
-        😀
-      </button>
+      <div className="absolute right-2 top-2 flex items-center gap-1">
+        <button
+          type="button"
+          className="w-8 h-8 rounded-lg bg-secondary hover:bg-accent border border-border flex items-center justify-center text-lg transition-colors"
+          onClick={() => setShowPicker(!showPicker)}
+          title="Adicionar emoji"
+        >
+          😀
+        </button>
+        <button
+          type="button"
+          className="px-2 h-8 rounded-lg bg-secondary hover:bg-accent border border-border text-xs font-mono"
+          onClick={() => insertText('{{nome}}')}
+          title="Inserir {{nome}}"
+        >
+          {"{{nome}}"}
+        </button>
+        <button
+          type="button"
+          className="px-2 h-8 rounded-lg bg-secondary hover:bg-accent border border-border text-xs font-mono"
+          onClick={() => insertText('{{data}}')}
+          title="Inserir {{data}}"
+        >
+          {"{{data}}"}
+        </button>
+      </div>
 
       {showPicker && (
         <>

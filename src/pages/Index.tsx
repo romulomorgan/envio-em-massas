@@ -145,10 +145,10 @@ const Index = () => {
   // Agendamento e delays
   const [schedule, setSchedule] = useState('');
   const [defaultCountryCode, setDefaultCountryCode] = useState('55');
-  const [itemDelay, setItemDelay] = useState(1);
-  const [itemVariance, setItemVariance] = useState(0);
-  const [contactDelay, setContactDelay] = useState(5);
-  const [contactVariance, setContactVariance] = useState(2);
+  const [itemDelay, setItemDelay] = useState(3);
+  const [itemVariance, setItemVariance] = useState(4);
+  const [contactDelay, setContactDelay] = useState(10);
+  const [contactVariance, setContactVariance] = useState(10);
 
   // Envio
   const [sending, setSending] = useState(false);
