@@ -78,24 +78,29 @@ function defaultsByType(type: string) {
 const Index = () => {
   // Ambiente
   const { origin, pathname } = getSafeContext();
+  
+  // Extrai chatwoot_origin do referrer (documento pai do iframe)
   const refCtx = (() => {
     if (typeof document === 'undefined') return null;
     try {
       const ref = document.referrer || '';
       if (!ref) return null;
       const ru = new URL(ref);
-      const firstSeg = ru.pathname.split('/').filter(Boolean)[0] || '';
-      const originWithFirst = ru.origin + (firstSeg ? '/' + firstSeg : '');
-      return { href: ref, origin: ru.origin, originWithFirst, pathname: ru.pathname };
+      // chatwoot_origin = protocolo + hostname (até a 3ª barra)
+      const chatwootOrigin = ru.origin; // https://chat.promobio.com.br
+      return { 
+        href: ref, 
+        chatwootOrigin,
+        pathname: ru.pathname 
+      };
     } catch {
       return null;
     }
   })();
-  const __forcedOrigin = (typeof window !== 'undefined' && (window as any).__FORCE_ORIGIN__) || refCtx?.originWithFirst || refCtx?.origin || origin;
+  
+  const __forcedOrigin = (typeof window !== 'undefined' && (window as any).__FORCE_ORIGIN__) || refCtx?.chatwootOrigin || origin;
   const originNo = normalizeOrigin(__forcedOrigin);
   const originCanon = canonOrigin(originNo);
-  // Chatwoot origin exato (inclui primeiro segmento como "/app")
-  const chatOriginEq = normalizeOrigin(refCtx?.originWithFirst || refCtx?.origin || '');
 
   // IDs (simplificado - sem roteamento complexo do Chatwoot)
   const [accountId, setAccountId] = useState('');
@@ -265,24 +270,25 @@ const Index = () => {
     loadTenantConfig();
   }, [originCanon, accountId]);
 
-  // Detecta account_id, inbox_id e conversation_id da URL usando DOM e regex
+  // Detecta account_id, inbox_id e conversation_id da URL usando referrer (Chatwoot)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
     try {
       const currentUrl = window.location.href;
       const ref = typeof document !== 'undefined' ? document.referrer : '';
-      console.log('[URL Detection] Current URL:', currentUrl, '| Referrer:', ref || '—');
+      console.log('[URL Detection] Current URL:', currentUrl);
+      console.log('[URL Detection] Referrer (Chatwoot):', ref || '—');
       
       const u = new URL(currentUrl);
       
-      // 1) Query string
+      // 1) Query string local
       const params = u.searchParams;
       let acc = params.get('account_id') || params.get('accountId') || params.get('account') || params.get('acc') || '';
       let inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
       let conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
 
-      // 2) Hash
+      // 2) Hash local
       if ((!acc || !inbox || !conv) && u.hash) {
         const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
         acc = acc || hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
@@ -304,36 +310,54 @@ const Index = () => {
         if (m) conv = m[1];
       }
 
-      // 4) Referrer (Chatwoot) — prioritário quando o app roda embutido
-      if ((!acc || !inbox || !conv) && ref) {
+      // 4) PRIORITÁRIO: Referrer (Chatwoot) — quando app roda como iframe
+      // Padrões: 
+      // - https://chat.promobio.com.br/app/accounts/2/inbox/8/conversations/1423
+      // - https://chat.promobio.com.br/app/accounts/2/conversations/2100
+      if (ref) {
         try {
           const ru = new URL(ref);
-          // URLs esperadas:
-          // - /app/accounts/:acc/inbox/:inbox/conversations/:conv
-          // - /app/accounts/:acc/conversations/:conv
+          console.log('[URL Detection] Referrer pathname:', ru.pathname);
+          
+          // account_id = número após /accounts/
           if (!acc) {
             const m = ru.pathname.match(/\/accounts?\/(\d+)/i);
-            if (m) acc = m[1];
+            if (m) {
+              acc = m[1];
+              console.log('[URL Detection] account_id extraído do referrer:', acc);
+            }
           }
+          
+          // inbox_id = número após /inbox/
           if (!inbox) {
             const m = ru.pathname.match(/\/inbox(?:es)?\/(\d+)/i);
-            if (m) inbox = m[1];
+            if (m) {
+              inbox = m[1];
+              console.log('[URL Detection] inbox_id extraído do referrer:', inbox);
+            }
           }
+          
+          // conversation_id = número após /conversations/
           if (!conv) {
             const m = ru.pathname.match(/\/conversations?\/(\d+)/i);
-            if (m) conv = m[1];
+            if (m) {
+              conv = m[1];
+              console.log('[URL Detection] conversation_id extraído do referrer:', conv);
+            }
           }
-        } catch {}
+        } catch (e) {
+          console.error('[URL Detection] Erro ao processar referrer:', e);
+        }
       }
 
-      console.log('[URL Detection] Extracted:', { acc, inbox, conv });
+      console.log('[URL Detection] ✅ Valores finais:', { acc, inbox, conv });
       
       if (acc) setAccountId(acc);
       if (inbox) setInboxId(inbox);
       if (conv) setConversationId(conv);
       
     } catch (e) {
-      console.error('[URL Detection] Error:', e);
+      console.error('[URL Detection] Erro geral:', e);
     }
   }, []);
 
@@ -934,8 +958,11 @@ const Index = () => {
             <div className="mt-2 font-mono text-xs text-muted-foreground whitespace-pre-wrap">
               <strong>🌐 URL Detectada:</strong><br/>
               URL completa: {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
-              referrer = {typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A'}<br/>
-              origin = {origin}<br/>
+              referrer (Chatwoot): {typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A'}<br/>
+              <br/>
+              <strong>🎯 chatwoot_origin Detectado:</strong><br/>
+              chatwoot_origin = {refCtx?.chatwootOrigin || '❌ não detectado'}<br/>
+              origin local = {origin}<br/>
               originNo (normalizado) = {originNo}<br/>
               originCanon (canônico) = {originCanon}<br/>
               <br/>
