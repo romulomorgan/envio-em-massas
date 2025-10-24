@@ -967,8 +967,8 @@ const Index = () => {
             <summary className="underline text-sm text-muted-foreground cursor-pointer">DEBUG - Detecção de URL e Perfis</summary>
             <div className="mt-2 font-mono text-xs text-muted-foreground whitespace-pre-wrap">
               <strong>🌐 URL Detectada:</strong><br/>
-              URL completa: {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
-              referrer (Chatwoot): {typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A'}<br/>
+              URL completa (local): {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
+              URL completa do Chatwoot (origem): {typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A'}<br/>
               referrer pathname: {refCtx?.pathname || 'N/A'}<br/>
               <br/>
               <strong>🎯 chatwoot_origin Detectado:</strong><br/>
