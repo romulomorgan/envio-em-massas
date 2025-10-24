@@ -339,6 +339,38 @@ const Index = () => {
     }
   }, []);
 
+  // Listener para receber IDs via postMessage (fallback quando referrer não traz o pathname)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onMsg = (e: MessageEvent) => {
+      try {
+        const d: any = e?.data;
+        if (!d || typeof d !== 'object') return;
+        const toNumStr = (v: any) => {
+          if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+          if (typeof v === 'string' && /^\d+$/.test(v.trim())) return v.trim();
+          return '';
+        };
+        const acc = toNumStr(d.account_id || d.accountId || d.acc);
+        const inbox = toNumStr(d.inbox_id || d.inboxId || d.inbox);
+        const conv = toNumStr(d.conversation_id || d.conversationId || d.conv);
+        if (acc) setAccountId(acc);
+        if (inbox) setInboxId(inbox);
+        if (conv) setConversationId(conv);
+        if (typeof window !== 'undefined') {
+          (window as any).__ACCOUNT_ID__ = acc || (window as any).__ACCOUNT_ID__;
+          (window as any).__INBOX_ID__ = inbox || (window as any).__INBOX_ID__;
+          (window as any).__CONVERSATION_ID__ = conv || (window as any).__CONVERSATION_ID__;
+        }
+        if (acc || inbox || conv) {
+          console.log('[postMessage] IDs recebidos:', { acc, inbox, conv });
+        }
+      } catch {}
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
   // Carregar perfis do NocoDB
   async function loadProfiles() {
     if (!originCanon || !accountId) {
