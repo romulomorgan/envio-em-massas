@@ -270,7 +270,15 @@ const Index = () => {
     loadTenantConfig();
   }, [originCanon, accountId]);
 
-  // Detecta account_id, inbox_id e conversation_id da URL usando referrer (Chatwoot)
+  // Helper: extrai IDs do pathname do Chatwoot
+  function extractIdsFromPath(pathname: string) {
+    const acc = pathname.match(/\/accounts\/(\d+)(?:\/|$)/i)?.[1] || '';
+    const inbox = pathname.match(/\/inbox(?:es)?\/(\d+)(?:\/|$)/i)?.[1] || '';
+    const conv = pathname.match(/\/conversations\/(\d+)(?:\/|$)/i)?.[1] || '';
+    return { acc, inbox, conv };
+  }
+
+  // Detecta account_id, inbox_id e conversation_id
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
@@ -291,59 +299,29 @@ const Index = () => {
       // 2) Hash local
       if ((!acc || !inbox || !conv) && u.hash) {
         const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
-        acc = acc || hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
-        inbox = inbox || hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
-        conv = conv || hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
+        acc = acc || (hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '');
+        inbox = inbox || (hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '');
+        conv = conv || (hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '');
       }
 
-      // 3) Pathname local
-      if (!acc) {
-        const m = u.pathname.match(/\/accounts?\/(\d+)/i);
-        if (m) acc = m[1];
-      }
-      if (!inbox) {
-        const m = u.pathname.match(/\/inbox(?:es)?\/(\d+)/i);
-        if (m) inbox = m[1];
-      }
-      if (!conv) {
-        const m = u.pathname.match(/\/conversations?\/(\d+)/i);
-        if (m) conv = m[1];
+      // 3) Pathname local (quando app estiver sob o mesmo domínio)
+      if ((!acc || !inbox || !conv) && u.pathname) {
+        const idsLocal = extractIdsFromPath(u.pathname);
+        if (!acc && idsLocal.acc) acc = idsLocal.acc;
+        if (!inbox && idsLocal.inbox) inbox = idsLocal.inbox;
+        if (!conv && idsLocal.conv) conv = idsLocal.conv;
       }
 
-      // 4) PRIORITÁRIO: Referrer (Chatwoot) — quando app roda como iframe
-      // Padrões: 
-      // - https://chat.promobio.com.br/app/accounts/2/inbox/8/conversations/1423
-      // - https://chat.promobio.com.br/app/accounts/2/conversations/2100
+      // 4) Referrer (Chatwoot) — cobre os dois formatos
       if (ref) {
         try {
           const ru = new URL(ref);
-          console.log('[URL Detection] Referrer pathname:', ru.pathname);
-          
-          // account_id = número após /accounts/
-          if (!acc) {
-            const m = ru.pathname.match(/\/accounts?\/(\d+)/i);
-            if (m) {
-              acc = m[1];
-              console.log('[URL Detection] account_id extraído do referrer:', acc);
-            }
-          }
-          
-          // inbox_id = número após /inbox/
-          if (!inbox) {
-            const m = ru.pathname.match(/\/inbox(?:es)?\/(\d+)/i);
-            if (m) {
-              inbox = m[1];
-              console.log('[URL Detection] inbox_id extraído do referrer:', inbox);
-            }
-          }
-          
-          // conversation_id = número após /conversations/
-          if (!conv) {
-            const m = ru.pathname.match(/\/conversations?\/(\d+)/i);
-            if (m) {
-              conv = m[1];
-              console.log('[URL Detection] conversation_id extraído do referrer:', conv);
-            }
+          const rPath = ru.pathname || '';
+          if (rPath && rPath !== '/') {
+            const idsRef = extractIdsFromPath(rPath);
+            if (!acc && idsRef.acc) acc = idsRef.acc;
+            if (!inbox && idsRef.inbox) inbox = idsRef.inbox;
+            if (!conv && idsRef.conv) conv = idsRef.conv;
           }
         } catch (e) {
           console.error('[URL Detection] Erro ao processar referrer:', e);
@@ -959,6 +937,7 @@ const Index = () => {
               <strong>🌐 URL Detectada:</strong><br/>
               URL completa: {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
               referrer (Chatwoot): {typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A'}<br/>
+              referrer pathname: {refCtx?.pathname || 'N/A'}<br/>
               <br/>
               <strong>🎯 chatwoot_origin Detectado:</strong><br/>
               chatwoot_origin = {refCtx?.chatwootOrigin || '❌ não detectado'}<br/>
