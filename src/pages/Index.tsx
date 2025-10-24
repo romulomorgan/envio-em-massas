@@ -43,6 +43,8 @@ import {
   logsListForRun
 } from '@/lib/noco-api';
 import { Contact, Block, Label, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const TYPE_LABEL: Record<string, string> = {
   text: 'Texto',
@@ -108,6 +110,8 @@ const Index = () => {
   const [conversationId, setConversationId] = useState('');
   const [parentPathInfo, setParentPathInfo] = useState<{ href?: string; pathname?: string } | null>(null);
   const [appCtx, setAppCtx] = useState<any>(null);
+  const [manualUrl, setManualUrl] = useState('');
+  const [detectMsg, setDetectMsg] = useState('');
 
   // Estados principais
   const [tab, setTab] = useState('direct');
@@ -278,6 +282,43 @@ const Index = () => {
     const inbox = pathname.match(/\/inbox(?:es)?\/(\d+)(?:\/|$)/i)?.[1] || '';
     const conv = pathname.match(/\/conversations\/(\d+)(?:\/|$)/i)?.[1] || '';
     return { acc, inbox, conv };
+  }
+
+  function applyIds(acc?: string, inbox?: string, conv?: string) {
+    if (acc) setAccountId(acc);
+    if (inbox) setInboxId(inbox);
+    if (conv) setConversationId(conv);
+    if (typeof window !== 'undefined') {
+      if (acc) (window as any).__ACCOUNT_ID__ = acc;
+      if (inbox) (window as any).__INBOX_ID__ = inbox;
+      if (conv) (window as any).__CONVERSATION_ID__ = conv;
+    }
+  }
+
+  function parseAndApplyFromUrl(raw: string) {
+    try {
+      const u = new URL(raw);
+      setParentPathInfo({ href: u.href, pathname: u.pathname });
+      const ids = extractIdsFromPath(u.pathname);
+      applyIds(ids.acc, ids.inbox, ids.conv);
+      setDetectMsg('URL processada com sucesso.');
+    } catch (e: any) {
+      setDetectMsg('URL inválida.');
+    }
+  }
+
+  function tryReadTop() {
+    try {
+      // Pode falhar por cross-origin
+      const href = (window.top && (window.top as any).location && (window.top as any).location.href) as string;
+      if (href && /^https?:\/\//i.test(href)) {
+        parseAndApplyFromUrl(href);
+        return;
+      }
+      setDetectMsg('Não foi possível ler window.top.location (cross-origin).');
+    } catch {
+      setDetectMsg('Acesso negado ao topo (cross-origin). Use o campo abaixo ou aguarde appContext.');
+    }
   }
 
   // Detecta account_id, inbox_id e conversation_id
@@ -1027,6 +1068,17 @@ const Index = () => {
               URL completa (local): {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
               URL completa do Chatwoot (origem): {parentPathInfo?.href || (typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A')}<br/>
               referrer pathname: {parentPathInfo?.pathname || refCtx?.pathname || 'N/A'}<br/>
+
+              {/* Ferramentas de detecção manual */}
+              <div className="mt-2 p-2 rounded border border-border bg-muted/30">
+                <div className="mb-2">Cole a URL do Chatwoot (ex.: https://chat.promobio.com.br/app/accounts/2/conversations/1428):</div>
+                <div className="flex gap-2 items-center">
+                  <Input value={manualUrl} onChange={(e) => setManualUrl(e.target.value)} placeholder="https://chat..." className="h-8" />
+                  <Button variant="secondary" className="h-8 px-3" onClick={() => parseAndApplyFromUrl(manualUrl)}>Usar URL</Button>
+                  <Button variant="outline" className="h-8 px-3" onClick={tryReadTop}>Tentar do topo</Button>
+                </div>
+                {detectMsg && (<div className="mt-2 text-[11px]">{detectMsg}</div>)}
+              </div>
               <br/>
               <strong>🎯 chatwoot_origin Detectado:</strong><br/>
               chatwoot_origin = {refCtx?.chatwootOrigin || '❌ não detectado'}<br/>
