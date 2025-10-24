@@ -196,7 +196,7 @@ const Index = () => {
   const pageSize = 10;
   const labelsReqRef = useRef<{ controller: AbortController | null }>({ controller: null });
 
-  // Carregar configuração do tenant
+  // Carregar configuração do tenant (busca na tabela evo_profiles)
   async function loadTenantConfig() {
     if (!originCanon) {
       console.log('[tenantConfig] Aguardando originCanon...');
@@ -204,15 +204,15 @@ const Index = () => {
     }
 
     try {
-      console.log('[tenantConfig] Buscando tenant:', { originCanon, accountId });
+      console.log('[tenantConfig] Buscando perfil na evo_profiles:', { originCanon, accountId });
       const baseUrl = NOCO_URL;
       let data: any = null;
 
-      // Se temos account_id, busca com ambos os filtros
+      // Se temos account_id, busca com ambos os filtros na tabela evo_profiles
       if (accountId) {
         const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
-        const url = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(where)}`;
-        console.log('[tenantConfig] URL com account_id:', url);
+        const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
+        console.log('[tenantConfig] URL com account_id (evo_profiles):', url);
         data = await nocoGET(url).catch((err) => {
           console.error('[tenantConfig] Erro na busca com account_id:', err);
           return null;
@@ -222,8 +222,8 @@ const Index = () => {
       // Se não encontrou com account_id ou não tem account_id, busca só pelo origin
       if (!data || !Array.isArray(data.list) || data.list.length === 0) {
         const where = `(chatwoot_origin,eq,${originCanon})`;
-        const url = `${baseUrl}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&viewId=${NOCO_TENANT_VIEW_ID}&where=${encodeURIComponent(where)}`;
-        console.log('[tenantConfig] URL sem account_id:', url);
+        const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
+        console.log('[tenantConfig] URL sem account_id (evo_profiles):', url);
         data = await nocoGET(url).catch((err) => {
           console.error('[tenantConfig] Erro na busca sem account_id:', err);
           return null;
