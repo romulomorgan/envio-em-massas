@@ -987,7 +987,16 @@ const Index = () => {
       const contactsToSend = contacts.filter(c => selectedContacts.includes(c.id));
       
       const runId = `run_${Date.now()}_${uid()}`;
-      const whenUTC = schedule || new Date().toISOString();
+      
+      // Converte o datetime-local para UTC se houver agendamento
+      let whenUTC: string;
+      if (schedule) {
+        // datetime-local retorna formato "YYYY-MM-DDTHH:mm", assumindo fuso local
+        const localDate = new Date(schedule);
+        whenUTC = localDate.toISOString();
+      } else {
+        whenUTC = new Date().toISOString();
+      }
       
       // Formata contatos
       const shuffledContacts = contactsToSend.map(c => ({
@@ -1155,6 +1164,47 @@ const Index = () => {
       loadMonitor();
     } catch (e: any) {
       setStatus(`Erro: ${e.message}`);
+    }
+  }
+
+  async function handleDownloadExcel(queueId: string | number, queueName: string, runId: string) {
+    try {
+      setStatus('Baixando relatório...');
+      
+      // Buscar logs desta campanha
+      const logsData = await logsListForRun(runId);
+      const logs = Array.isArray(logsData?.list) ? logsData.list : [];
+      
+      if (logs.length === 0) {
+        setStatus('Nenhum log encontrado para esta campanha.');
+        return;
+      }
+      
+      // Preparar dados para Excel
+      const excelData = logs.map((log: any) => ({
+        'ID': log.Id,
+        'Contato': log.contact_name || '-',
+        'Telefone': log.contact_phone || '-',
+        'Status': log.status === 'success' ? 'Sucesso' : log.status === 'failed' ? 'Falha' : log.status,
+        'Mensagem': log.message || '-',
+        'Data/Hora': log.CreatedAt ? formatBRDateTime(log.CreatedAt) : '-',
+        'Item': log.item_ix || 0,
+        'Erro': log.error_msg || '-'
+      }));
+      
+      // Criar planilha
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Logs');
+      
+      // Download
+      const fileName = `${queueName.replace(/[^a-z0-9]/gi, '_')}_logs_${Date.now()}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      
+      setStatus(`✅ Relatório baixado: ${fileName}`);
+    } catch (e: any) {
+      console.error('[handleDownloadExcel] Erro:', e);
+      setStatus(`❌ Erro ao baixar relatório: ${e.message}`);
     }
   }
 
@@ -1932,7 +1982,12 @@ const Index = () => {
                                 q.status === 'failed' ? 'status-pill-error' :
                                 'status-pill-default'
                               }`}>
-                                {q.status}
+                                {q.status === 'scheduled' ? 'agendado' :
+                                 q.status === 'running' ? 'executando' :
+                                 q.status === 'completed' ? 'concluído' :
+                                 q.status === 'paused' ? 'pausado' :
+                                 q.status === 'failed' ? 'falhou' :
+                                 q.status}
                               </span>
                               {q.is_paused && (
                                 <span className="status-pill status-pill-warning ml-2">pausado</span>
@@ -1955,7 +2010,12 @@ const Index = () => {
                               </div>
                             </td>
                             <td className="px-4 py-2">
-                              <div className="flex gap-1">
+                              <div className="flex gap-1 flex-wrap">
+                                {q.status === 'scheduled' && !q.is_paused && (
+                                  <SmallBtn onClick={() => handlePauseQueue(q.Id)} variant="secondary">
+                                    Pausar
+                                  </SmallBtn>
+                                )}
                                 {q.status === 'running' && !q.is_paused && (
                                   <SmallBtn onClick={() => handlePauseQueue(q.Id)} variant="secondary">
                                     Pausar
@@ -1966,6 +2026,9 @@ const Index = () => {
                                     Retomar
                                   </SmallBtn>
                                 )}
+                                <SmallBtn onClick={() => handleDownloadExcel(q.Id, q.name, q.run_id)} variant="secondary">
+                                  Baixar Excel
+                                </SmallBtn>
                                 <SmallBtn onClick={() => handleDeleteQueue(q.Id)} variant="destructive">
                                   Excluir
                                 </SmallBtn>
