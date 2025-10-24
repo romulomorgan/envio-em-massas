@@ -228,6 +228,13 @@ const Index = () => {
       setTenantConfig(chosen);
       setHasChatwootAccess(!!(chosen.admin_apikey) && chosen.is_active === true);
       setHasCvAccess(chosen.cv_activa || chosen.cv_active);
+      // Expor variáveis globais como no original (forçado)
+      if (typeof window !== 'undefined') {
+        (window as any).__ADMIN_APIKEY__ = chosen.admin_apikey || '';
+        (window as any).__ACCOUNT_ID__ = String(chosen.account_id || accountId || '');
+        (window as any).__INBOX_ID__ = String(inboxId || '');
+        (window as any).__FORCE_ORIGIN__ = originCanon;
+      }
       return chosen;
     } catch (e) {
       console.error('loadTenantConfig error:', e);
@@ -753,6 +760,15 @@ const Index = () => {
       loadMonitor();
     }
   }, [tab, page, queueSort, accountId, originCanon]);
+
+  // Atualização automática do monitor (intervalo)
+  useEffect(() => {
+    if (tab !== 'monitor' || !accountId || !originCanon) return;
+    const id = setInterval(() => {
+      loadMonitor();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [tab, accountId, originCanon]);
 
   async function handleDeleteQueue(queueId: string | number) {
     if (!confirm('Deseja realmente excluir esta campanha?')) return;
@@ -1517,12 +1533,12 @@ const Index = () => {
           {/* TAB: MONITOR */}
           {tab === 'monitor' && (
             <div className="space-y-6">
-              <SectionTitle>
-                <span>Campanhas</span>
+              <SectionTitle>Campanhas</SectionTitle>
+              <div className="flex items-center justify-end">
                 <SmallBtn onClick={loadMonitor} disabled={monitorBusy}>
                   {monitorBusy ? 'Carregando...' : 'Atualizar'}
                 </SmallBtn>
-              </SectionTitle>
+              </div>
 
               <div className="border border-border rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
