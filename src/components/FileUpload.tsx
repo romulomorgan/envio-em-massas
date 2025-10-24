@@ -4,13 +4,14 @@ import { Block } from '@/types/envio';
 import { uid } from '@/lib/utils-envio';
 
 interface FileUploadProps {
-  blk: Block;
+  blk?: Block;
   accept: string;
-  onUploaded: (info: { url: string; name: string; type: string; path: string | null }) => void;
-  onError: (msg: string) => void;
+  onUploaded?: (info: { url: string; name: string; type: string; path: string | null }) => void;
+  onUploadComplete?: (url: string) => void;
+  onError?: (msg: string) => void;
 }
 
-export function FileUpload({ blk, accept, onUploaded, onError }: FileUploadProps) {
+export function FileUpload({ blk, accept, onUploaded, onUploadComplete, onError }: FileUploadProps) {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const inputId = `file-input-${blk?.id || uid()}`;
@@ -27,19 +28,24 @@ export function FileUpload({ blk, accept, onUploaded, onError }: FileUploadProps
         await supaRemove(blk.data._supaPath);
       }
 
-      const info = await supaUpload(file, blk.type);
+      const info = await supaUpload(file, blk?.type || 'media');
       setStatus('Enviado');
-      onUploaded({
-        url: info.url,
-        name: info.name || file.name,
-        type: info.type || file.type,
-        path: info.path || null
-      });
+      if (onUploaded) {
+        onUploaded({
+          url: info.url,
+          name: info.name || file.name,
+          type: info.type || file.type,
+          path: info.path || null
+        });
+      }
+      if (onUploadComplete) {
+        onUploadComplete(info.url);
+      }
     } catch (err: any) {
       console.error(err);
       const msg = 'Erro no upload: ' + (err?.message || 'falha');
       setStatus(msg);
-      onError(msg);
+      if (onError) onError(msg);
     } finally {
       setBusy(false);
       if (e && e.target) e.target.value = '';

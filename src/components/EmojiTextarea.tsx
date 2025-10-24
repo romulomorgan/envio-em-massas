@@ -4,9 +4,10 @@ interface EmojiTextareaProps {
   value: string;
   onChange: (value: string) => void;
   minHeight?: number;
+  placeholder?: string;
 }
 
-export function EmojiTextarea({ value, onChange, minHeight = 120 }: EmojiTextareaProps) {
+export function EmojiTextarea({ value, onChange, minHeight = 120, placeholder }: EmojiTextareaProps) {
   const [showPicker, setShowPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,6 +44,7 @@ export function EmojiTextarea({ value, onChange, minHeight = 120 }: EmojiTextare
         style={{ minHeight }}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
       />
       <button
         type="button"
