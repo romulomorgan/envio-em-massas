@@ -901,13 +901,24 @@ const Index = () => {
 
   // ========== FUNÇÕES DE BLOCOS ==========
 
+  // Função helper para jitter (delay randômico)
+  function jitter(base: number, variance: number): number {
+    const v = Math.max(0, Number(variance) || 0);
+    const b = Math.max(0, Number(base) || 0);
+    if (!v) return b;
+    const min = Math.max(0, b - v);
+    const max = b + v;
+    return Math.round(min + Math.random() * (max - min));
+  }
+
   function addBlock(type: string) {
+    const delay = jitter(itemDelay, itemVariance); // Delay randômico para cada bloco
     const newBlock: Block = {
       id: uid(),
       type: type as any,
       action: 'sendMessage',
       data: defaultsByType(type),
-      itemWait: itemDelay
+      itemWait: delay
     };
     setBlocks(prev => [...prev, newBlock]);
   }
@@ -1770,6 +1781,7 @@ const Index = () => {
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium text-muted-foreground">#{idx + 1}</span>
                             <span className="status-pill status-pill-info">{TYPE_LABEL[block.type]}</span>
+                            <span className="text-xs text-muted-foreground">⏱️ {block.itemWait || 0}s</span>
                           </div>
                           <div className="flex gap-1">
                             <SmallBtn onClick={() => moveBlockUp(block.id)} variant="secondary" title="Mover para cima">
@@ -1785,6 +1797,11 @@ const Index = () => {
                               ×
                             </SmallBtn>
                           </div>
+                        </div>
+
+                        {/* Composição por Blocos - Header com instruções */}
+                        <div className="mb-3 text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded">
+                          💡 Use <b>{'{{nome}}'}</b> para nome do contato e <b>{'{{data}}'}</b> para a data
                         </div>
 
                         {/* Text */}
