@@ -296,7 +296,7 @@ const Index = () => {
     setLoadingProfiles(true);
     setProfilesError('');
     try {
-      const where = `(origin,eq,${originCanon})~and(account_id,eq,${accountId})`;
+      const where = `(chatwoot_origin,eq,${originCanon})~and(account_id,eq,${accountId})`;
       const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?where=${encodeURIComponent(where)}&limit=1000`;
       const data = await nocoGET(url);
       const list = Array.isArray(data?.list) ? data.list : [];
@@ -304,8 +304,10 @@ const Index = () => {
         Id: r.Id,
         name: r.name || r.profile_name || 'Perfil',
         origin: r.origin,
+        chatwoot_origin: r.chatwoot_origin,
         account_id: r.account_id,
-        inbox_id: r.inbox_id
+        inbox_id: r.inbox_id,
+        admin_apikey: r.admin_apikey || r.adimin_apikey || ''
       })));
       setStatus(`${list.length} perfil(is) carregado(s).`);
     } catch (err: any) {
@@ -869,8 +871,20 @@ const Index = () => {
             <div className="mt-2 font-mono text-xs text-muted-foreground">
               origin = {origin} (norm: {originNo}) (canon: {originCanon})<br/>
               accountId = {accountId} | inboxId = {inboxId} | conversationId = {conversationId}<br/>
-              admin_api_key = {(typeof window !== 'undefined' && (window as any).__ADMIN_APIKEY__) || 'não definido'}<br/>
+              admin_api_key (tenant) = {(typeof window !== 'undefined' && (window as any).__ADMIN_APIKEY__) || 'não definido'}<br/>
               perfis carregados = {profiles.length}<br/>
+              {profiles.length > 0 && (
+                <>
+                  <br/>
+                  <strong>Perfis detectados:</strong><br/>
+                  {profiles.map((p, i) => (
+                    <span key={p.Id}>
+                      [{i+1}] Id={p.Id} | name="{p.name}" | account_id={p.account_id} | admin_apikey={p.admin_apikey || 'não definido'}<br/>
+                    </span>
+                  ))}
+                </>
+              )}
+              <br/>
               empreendimentos = {empreendimentos.length}<br/>
               supabase = {tenantConfig ? 'configurado' : 'não'} | uploader = {(typeof window !== 'undefined' && (window as any).__UPLOADER_URL__) ? 'configurado' : 'não'}<br/>
               noco: url={NOCO_URL}

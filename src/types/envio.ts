@@ -33,8 +33,10 @@ export interface Profile {
   Id: string | number;
   name: string;
   origin?: string;
+  chatwoot_origin?: string;
   account_id?: string | number;
   inbox_id?: string | number;
+  admin_apikey?: string;
 }
 
 export interface BlockData {
