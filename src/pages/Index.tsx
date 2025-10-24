@@ -530,13 +530,27 @@ const Index = () => {
         chatwoot_origin: r.chatwoot_origin,
         account_id: r.account_id,
         inbox_id: r.inbox_id,
-        admin_apikey: r.admin_apikey || r.adimin_apikey || ''
+        admin_apikey: r.admin_apikey || r.adimin_apikey || '',
+        default: !!(r.default === true || r.default === 'true' || r.default === 1)
       }));
       
-      setProfiles(mappedProfiles);
+      // Ordena perfis: perfil com default=true primeiro
+      const sortedProfiles = mappedProfiles.sort((a, b) => {
+        if (a.default && !b.default) return -1;
+        if (!a.default && b.default) return 1;
+        return 0;
+      });
+      
+      setProfiles(sortedProfiles);
       setStatus(`${list.length} perfil(is) carregado(s).`);
       
-      console.log('[Perfis] Perfis carregados:', mappedProfiles);
+      // Auto-seleciona o primeiro perfil (que será o default se existir)
+      if (sortedProfiles.length > 0 && !selectedProfileId) {
+        setSelectedProfileId(String(sortedProfiles[0].Id));
+        console.log('[Perfis] Auto-selecionado:', sortedProfiles[0]);
+      }
+      
+      console.log('[Perfis] Perfis carregados:', sortedProfiles);
       
     } catch (err: any) {
       console.error('[Perfis] Erro ao carregar:', err);
@@ -988,6 +1002,11 @@ const Index = () => {
   // ========== FUNÇÕES DO MONITOR ==========
 
   async function loadMonitor() {
+    if (!accountId || !originCanon) {
+      console.log('[Monitor] Aguardando accountId e originCanon...', { accountId, originCanon });
+      return;
+    }
+    
     setMonitorBusy(true);
     try {
       const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
@@ -997,7 +1016,12 @@ const Index = () => {
       const sort = queueSort.dir === 'normal' ? '' : `&sort=${sortDir}${sortField}`;
       
       const url = `${NOCO_URL}/api/v2/tables/m6zl5h7bz31sxol/records?where=${encodeURIComponent(where)}&offset=${offset}&limit=${pageSize}${sort}`;
+      
+      console.log('[Monitor] Consultando campanhas:', { accountId, originCanon, url });
+      
       const data = await nocoGET(url);
+      
+      console.log('[Monitor] Resposta NocoDB:', { total: data?.pageInfo?.totalRows, registros: data?.list?.length });
       
       const list = Array.isArray(data?.list) ? data.list : [];
       setQueueRows(list.map((r: any) => ({
@@ -1122,75 +1146,6 @@ const Index = () => {
             Fluxo: perfil → etiquetas/contatos → <b>composição por blocos</b> → <b>upload</b> → <b>agendar</b> e acompanhar.
           </p>
 
-          <details className="mb-3">
-            <summary className="underline text-sm text-muted-foreground cursor-pointer">DEBUG - Detecção de URL e Perfis</summary>
-            <div className="mt-2 font-mono text-xs text-muted-foreground whitespace-pre-wrap">
-              <strong>🌐 URL Detectada:</strong><br/>
-              URL completa (local): {typeof window !== 'undefined' ? window.location.href : 'N/A'}<br/>
-              URL completa do Chatwoot (origem): {parentPathInfo?.href || (typeof document !== 'undefined' ? (document.referrer || 'N/A') : 'N/A')}<br/>
-              referrer pathname: {parentPathInfo?.pathname || refCtx?.pathname || 'N/A'}<br/>
-
-              {/* Ferramentas de detecção manual */}
-              <div className="mt-2 p-2 rounded border border-border bg-muted/30">
-                <div className="mb-2">Cole a URL do Chatwoot (ex.: https://chat.promobio.com.br/app/accounts/2/conversations/1428):</div>
-                <div className="flex gap-2 items-center">
-                  <Input value={manualUrl} onChange={(e) => setManualUrl(e.target.value)} placeholder="https://chat..." className="h-8" />
-                  <Button variant="secondary" className="h-8 px-3" onClick={() => parseAndApplyFromUrl(manualUrl)}>Usar URL</Button>
-                  <Button variant="outline" className="h-8 px-3" onClick={tryReadTop}>Tentar do topo</Button>
-                </div>
-                {detectMsg && (<div className="mt-2 text-[11px]">{detectMsg}</div>)}
-              </div>
-              <br/>
-              <strong>🎯 chatwoot_origin Detectado:</strong><br/>
-              chatwoot_origin = {refCtx?.chatwootOrigin || '❌ não detectado'}<br/>
-              origin local = {origin}<br/>
-              originNo (normalizado) = {originNo}<br/>
-              originCanon (canônico) = {originCanon}<br/>
-              <br/>
-              <strong>📡 appContext:</strong> {appCtx ? '✅ recebido' : '—'}<br/>
-              {appCtx && (
-                <>
-                  account_id(ctx) = {appCtx?.conversation?.account_id || appCtx?.account_id || appCtx?.account?.id || 'N/A'}<br/>
-                  inbox_id(ctx) = {appCtx?.conversation?.inbox_id || 'N/A'}<br/>
-                  conversation_id(ctx) = {appCtx?.conversation?.display_id || appCtx?.conversation?.id || 'N/A'}<br/>
-                  <br/>
-                </>
-              )}
-              <br/>
-              <strong>🔑 IDs Extraídos:</strong><br/>
-              accountId = {accountId || '❌ não detectado'}<br/>
-              inboxId = {inboxId || '❌ não detectado'}<br/>
-              conversationId = {conversationId || '❌ não detectado'}<br/>
-              <br/>
-              <strong>🔐 Tenant Config:</strong><br/>
-              admin_api_key (tenant) = {tenantConfig?.admin_apikey ? '✅ ' + tenantConfig.admin_apikey.substring(0, 20) + '...' : '❌ não definido'}<br/>
-              tenant configurado = {tenantConfig ? '✅ sim' : '❌ não'}<br/>
-              tenant.account_id = {tenantConfig?.account_id || 'N/A'}<br/>
-              tenant.chatwoot_origin = {tenantConfig?.chatwoot_origin || 'N/A'}<br/>
-              tenant.is_active = {tenantConfig?.is_active ? '✅ sim' : '❌ não'}<br/>
-              <br/>
-              <strong>📋 Perfis Carregados: {profiles.length}</strong><br/>
-              {loadingProfiles && '⏳ Carregando perfis...\n'}
-              {profilesError && `❌ Erro: ${profilesError}\n`}
-              {profiles.length === 0 && !loadingProfiles && '⚠️ Nenhum perfil encontrado\n'}
-              {profiles.length > 0 && profiles.map((p, i) => (
-                <span key={p.Id}>
-                  [{i+1}] <strong>{p.name}</strong><br/>
-                  &nbsp;&nbsp;&nbsp;• Id: {p.Id}<br/>
-                  &nbsp;&nbsp;&nbsp;• account_id: {p.account_id}<br/>
-                  &nbsp;&nbsp;&nbsp;• inbox_id: {p.inbox_id || 'N/A'}<br/>
-                  &nbsp;&nbsp;&nbsp;• chatwoot_origin: {p.chatwoot_origin || 'N/A'}<br/>
-                  &nbsp;&nbsp;&nbsp;• admin_apikey: {p.admin_apikey ? '✅ definido' : '❌ não definido'}<br/>
-                </span>
-              ))}
-              <br/>
-              <strong>📊 Outros Dados:</strong><br/>
-              empreendimentos = {empreendimentos.length}<br/>
-              supabase = {tenantConfig ? '✅ configurado' : '❌ não'}<br/>
-              uploader = {(typeof window !== 'undefined' && (window as any).__UPLOADER_URL__) ? '✅ configurado' : '❌ não'}<br/>
-              noco_url = {NOCO_URL}
-            </div>
-          </details>
           
           {/* Tabs */}
           <div className="flex gap-1 mb-6 border-b border-border">

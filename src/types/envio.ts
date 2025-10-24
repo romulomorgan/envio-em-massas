@@ -37,6 +37,7 @@ export interface Profile {
   account_id?: string | number;
   inbox_id?: string | number;
   admin_apikey?: string;
+  default?: boolean;
 }
 
 export interface BlockData {
