@@ -107,6 +107,7 @@ const Index = () => {
   const [inboxId, setInboxId] = useState('');
   const [conversationId, setConversationId] = useState('');
   const [parentPathInfo, setParentPathInfo] = useState<{ href?: string; pathname?: string } | null>(null);
+  const [appCtx, setAppCtx] = useState<any>(null);
 
   // Estados principais
   const [tab, setTab] = useState('direct');
@@ -348,7 +349,31 @@ const Index = () => {
         const d: any = e?.data;
         if (!d || (typeof d !== 'object' && typeof d !== 'string')) return;
 
-        // Se vier uma URL completa
+        // 0) Eventos do Chatwoot (Dashboard Apps) – appContext com conversation/contact/currentAgent
+        if (typeof d === 'object' && (d.event || d.type)) {
+          const evt = String(d.event || d.type || '').toLowerCase();
+          if (evt.includes('appcontext') || evt.includes('context')) {
+            const payload: any = d.data || {};
+            setAppCtx(payload);
+            const conv = payload.conversation || payload.conversation_details || {};
+            const toNumStr = (v: any) => (typeof v === 'number' && Number.isFinite(v)) ? String(v) : (typeof v === 'string' && /^\d+$/.test(v.trim()) ? v.trim() : '');
+            const acc2 = toNumStr(conv.account_id || payload.account_id || payload.account?.id);
+            const inbox2 = toNumStr(conv.inbox_id || payload.inbox_id);
+            const conv2 = toNumStr(conv.display_id || conv.id || payload.conversation_id);
+            if (acc2) setAccountId(acc2);
+            if (inbox2) setInboxId(inbox2);
+            if (conv2) setConversationId(conv2);
+            if (typeof window !== 'undefined') {
+              (window as any).__ACCOUNT_ID__ = acc2 || (window as any).__ACCOUNT_ID__;
+              (window as any).__INBOX_ID__ = inbox2 || (window as any).__INBOX_ID__;
+              (window as any).__CONVERSATION_ID__ = conv2 || (window as any).__CONVERSATION_ID__;
+            }
+            console.log('[postMessage] appContext recebido:', { acc2, inbox2, conv2, payload });
+            return; // já tratou
+          }
+        }
+
+        // 1) Se vier uma URL completa
         const maybeUrl = typeof d === 'string' ? d : (d.url || d.href || d.chatwoot_url || d.chatwoot_href);
         if (typeof maybeUrl === 'string' && /^https?:\/\//i.test(maybeUrl)) {
           try {
@@ -362,12 +387,12 @@ const Index = () => {
           } catch {}
         }
 
+        // 2) Ou os IDs soltos
         const toNumStr = (v: any) => {
           if (typeof v === 'number' && Number.isFinite(v)) return String(v);
           if (typeof v === 'string' && /^\d+$/.test(v.trim())) return v.trim();
           return '';
         };
-
         const acc = toNumStr((d as any).account_id || (d as any).accountId || (d as any).acc);
         const inbox = toNumStr((d as any).inbox_id || (d as any).inboxId || (d as any).inbox);
         const conv = toNumStr((d as any).conversation_id || (d as any).conversationId || (d as any).conv);
@@ -1008,6 +1033,16 @@ const Index = () => {
               origin local = {origin}<br/>
               originNo (normalizado) = {originNo}<br/>
               originCanon (canônico) = {originCanon}<br/>
+              <br/>
+              <strong>📡 appContext:</strong> {appCtx ? '✅ recebido' : '—'}<br/>
+              {appCtx && (
+                <>
+                  account_id(ctx) = {appCtx?.conversation?.account_id || appCtx?.account_id || appCtx?.account?.id || 'N/A'}<br/>
+                  inbox_id(ctx) = {appCtx?.conversation?.inbox_id || 'N/A'}<br/>
+                  conversation_id(ctx) = {appCtx?.conversation?.display_id || appCtx?.conversation?.id || 'N/A'}<br/>
+                  <br/>
+                </>
+              )}
               <br/>
               <strong>🔑 IDs Extraídos:</strong><br/>
               accountId = {accountId || '❌ não detectado'}<br/>
