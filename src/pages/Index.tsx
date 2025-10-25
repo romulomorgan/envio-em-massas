@@ -838,7 +838,7 @@ const Index = () => {
       
       console.log('[loadFromGroups] Carregando participantes dos grupos:', selectedGroups);
       
-      const users = await fetchGroupParticipants(selectedProfile, selectedGroups);
+      const users = await fetchGroupParticipants(originCanon, accountId, selectedProfile, selectedGroups);
       
       console.log('[loadFromGroups] Participantes recebidos:', users);
       

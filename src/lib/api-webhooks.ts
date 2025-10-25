@@ -104,13 +104,20 @@ export async function fetchGroups(profile: any) {
 
 // Carregar participantes de grupos
 export async function fetchGroupParticipants(
+  origin: string,
+  accountId: string,
   profile: any,
   groups: Array<{ id: string; name: string }>
 ) {
   const payload = {
-    instancia: profile.evo_instance || '',
-    url: profile.evo_base_url || '',
-    token: profile.evo_apikey || profile.evo_token || '',
+    origin,
+    account_id: accountId,
+    profile: {
+      id: profile.id,
+      instancia: profile.evo_instance || profile.instance || profile.instancia || '',
+      url: profile.evo_base_url || profile.base_url || profile.url || '',
+      token: profile.evo_apikey || profile.evo_token || profile.token || ''
+    },
     groups
   };
   
