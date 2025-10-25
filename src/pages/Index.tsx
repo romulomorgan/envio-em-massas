@@ -34,7 +34,9 @@ import {
   rand,
   downloadBlob,
   isHttpUrl,
-  normalizeAction
+  normalizeAction,
+  extractReasonFromLog,
+  extractNumberFromLog
 } from '@/lib/utils-envio';
 import { supaRemove } from '@/lib/supabase-client';
 import {
@@ -42,6 +44,7 @@ import {
   WEBHOOK_LIST_ENTS,
   WEBHOOK_LIST_GROUPS,
   WEBHOOK_LIST_GROUP_PARTICIPANTS,
+  WEBHOOK_LIST_LABELS,
   NOCO_TABLE_PROFILES_ID,
   NOCO_TENANT_TABLE_ID,
   NOCO_TENANT_VIEW_ID,
@@ -59,6 +62,15 @@ import {
   logsListByQueueId,
   logsListForRun
 } from '@/lib/noco-api';
+import {
+  fetchLabels,
+  fetchUsersByLabels,
+  fetchGroups,
+  fetchGroupParticipants,
+  fetchEmpreendimentos,
+  fetchUsersByEmpreendimentos,
+  fetchConnectionStatus
+} from '@/lib/api-webhooks';
 import { Contact, Block, Label, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -1317,12 +1329,18 @@ const Index = () => {
         return;
       }
       
-      // Preparar dados para Excel no formato original
-      const excelData = logs.map((log: any) => ({
-        Numero: log.contact_phone || '',
-        Status: log.status === 'ok' || log.status === 'success' ? 'Sucesso' : 'Falha',
-        Motivo: log.msg || log.message || log.error || ''
-      }));
+      // Preparar dados para Excel com Numero, Status e Motivo
+      const excelData = logs.map((log: any) => {
+        const numero = extractNumberFromLog(log);
+        const status = (log.level === 'success' || log.level === 'info' || log.http_status === 200 || log.http_status === 201) ? 'Sucesso' : 'Falha';
+        const motivo = status === 'Falha' ? extractReasonFromLog(log) : '';
+        
+        return {
+          Numero: numero || '-',
+          Status: status,
+          Motivo: motivo
+        };
+      });
       
       // Criar planilha
       const ws = XLSX.utils.json_to_sheet(excelData);
@@ -1330,7 +1348,7 @@ const Index = () => {
       XLSX.utils.book_append_sheet(wb, ws, 'Logs');
       
       // Download
-      const fileName = `${queueName.replace(/[^a-z0-9]/gi, '_')}_logs_${Date.now()}.xlsx`;
+      const fileName = `Campanha_logs_${queueName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`;
       XLSX.writeFile(wb, fileName);
       
       setStatus(`✅ Relatório baixado: ${fileName}`);
@@ -2326,7 +2344,13 @@ const Index = () => {
           {tab === 'monitor' && (
             <div className="space-y-6">
               <SectionTitle>Campanhas</SectionTitle>
-              <div className="flex items-center justify-end">
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="default"
+                  onClick={() => setTab('direct')}
+                >
+                  Criar Campanha
+                </Button>
                 <SmallBtn onClick={loadMonitor} disabled={monitorBusy}>
                   {monitorBusy ? 'Carregando...' : 'Atualizar'}
                 </SmallBtn>
@@ -2342,6 +2366,7 @@ const Index = () => {
                         <th className="px-4 py-2 text-left text-sm font-medium">Status</th>
                         <th className="px-4 py-2 text-left text-sm font-medium">Agendado</th>
                         <th className="px-4 py-2 text-left text-sm font-medium">Progresso</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium">Processados</th>
                         <th className="px-4 py-2 text-left text-sm font-medium">Ações</th>
                       </tr>
                     </thead>

@@ -134,3 +134,41 @@ export function downloadBlob(filename: string, data: string | ArrayBuffer, mimeT
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// Credenciais da API CV (empreendimentos)
+export const CV_API_URL = 'https://lumis.cvcrm.com.br/api/cvio/empreendimento';
+export const CV_API_EMAIL = 'integracao@integracao.com.br';
+export const CV_API_TOKEN = '595582bb36d0cb139b11239f8b0852aa8baf1d49';
+
+// Webhooks do sistema
+export const WEBHOOK_LIST_LABELS = 'https://web.iadmin.ai/webhook/listar-etiquetas-empresas';
+export const WEBHOOK_LIST_USERS = 'https://web.iadmin.ai/webhook/usuario-por-marcadores';
+export const WEBHOOK_LIST_GROUPS = 'https://web.iadmin.ai/webhook/listar-grupos-do-whatsapp';
+export const WEBHOOK_LIST_GROUP_PARTICIPANTS = 'https://web.iadmin.ai/webhook/listar-participantes-de-grupos';
+export const WEBHOOK_LIST_ENTS = 'https://web.iadmin.ai/webhook/usuario-por-empreendimentos';
+
+export function extractReasonFromLog(l: any): string {
+  try {
+    const http = l.http_status ?? l.http_code;
+    if (l.level === 'error') {
+      const j = typeof l.message_json === 'string' ? JSON.parse(l.message_json) : (l.message_json || {});
+      const msg = j?.error?.message || j?.message || j?.response?.message || j?.status || j?.error || JSON.stringify(j);
+      return `HTTP ${http || '-'} ${msg || ''}`.trim();
+    }
+    return http ? `HTTP ${http}` : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+export function extractNumberFromLog(l: any): string {
+  const tryList = [
+    l?.to_number, l?.to, l?.number, l?.recipient, l?.phone, l?.telefone,
+    l?.request_json?.number, l?.request_json?.to, l?.request_json?.body?.number
+  ];
+  for (const v of tryList) {
+    const cleaned = String(v || '').replace(/\D+/g, '');
+    if (cleaned) return cleaned;
+  }
+  return '';
+}

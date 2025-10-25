@@ -10,6 +10,7 @@ export const TABLE_SEND_QUEUE_ID = 'm2jlcomq5xbl9ow';
 export const TABLE_SEND_LOGS_ID = 'm94sc6d7vih3589';
 export const NOCO_TABLE_PROFILES_ID = 'mjjcsg905l9iw25';
 
+export const WEBHOOK_LIST_LABELS = "https://web.iadmin.ai/webhook/listar-etiquetas-empresas";
 export const WEBHOOK_LIST_USERS = "https://web.iadmin.ai/webhook/usuario-por-marcadores";
 export const WEBHOOK_LIST_ENTS = "https://web.iadmin.ai/webhook/usuario-por-empreendimentos";
 export const WEBHOOK_LIST_GROUPS = "https://web.iadmin.ai/webhook/listar-grupos-do-whatsapp";

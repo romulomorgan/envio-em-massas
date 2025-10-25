@@ -45,6 +45,7 @@ export interface Profile {
   item_variance?: number;
   contact_delay?: number;
   contact_variance?: number;
+  connection_status?: 'open' | 'close' | 'connecting' | null;
 }
 
 export interface BlockData {
