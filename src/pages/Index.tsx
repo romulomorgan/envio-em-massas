@@ -71,6 +71,7 @@ import {
   fetchUsersByEmpreendimentos,
   fetchConnectionStatus
 } from '@/lib/api-webhooks';
+import { fetchTenantData, TenantData } from '@/lib/tenant-api';
 import { Contact, Block, Label, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -147,6 +148,7 @@ const Index = () => {
 
   // Tenant config
   const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
+  const [tenantData, setTenantData] = useState<TenantData | null>(null);
   const [hasChatwootAccess, setHasChatwootAccess] = useState<boolean | null>(null);
   const [hasCvAccess, setHasCvAccess] = useState<boolean | null>(null);
 
@@ -697,10 +699,24 @@ const Index = () => {
         return;
       }
       
-      setContacts(prev => [...prev, ...imported]);
+      // Deduplica por telefone
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      const uniqueContacts = imported.filter(c => {
+        const phone = stripDigits(c.phone);
+        if (existingPhones.has(phone)) return false;
+        existingPhones.add(phone);
+        return true;
+      });
+      
+      if (uniqueContacts.length < imported.length) {
+        const duplicates = imported.length - uniqueContacts.length;
+        console.log(`[handleImportFile] ${duplicates} contato(s) duplicado(s) removido(s)`);
+      }
+      
+      setContacts(prev => [...prev, ...uniqueContacts]);
       // Seleciona automaticamente todos os contatos importados
-      setSelectedContacts(prev => [...prev, ...imported.map(c => c.id)]);
-      setStatus(`✅ Importados ${imported.length} contatos do arquivo.`);
+      setSelectedContacts(prev => [...prev, ...uniqueContacts.map(c => c.id)]);
+      setStatus(`✅ Importados ${uniqueContacts.length} contatos do arquivo (${imported.length - uniqueContacts.length} duplicados ignorados).`);
     } catch (e: any) {
       setStatus(`❌ Erro ao importar: ${e.message}`);
     }
@@ -781,11 +797,25 @@ const Index = () => {
         phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
         tags: selectedLabels.map(l => l.title).join(', '),
         srcLabel: true
-      }));
+      })).filter(c => c.phone); // Remove contatos sem telefone válido
       
-      setContacts(prev => [...prev, ...newContacts]);
-      setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`✅ ${newContacts.length} contatos carregados das etiquetas.`);
+      // Deduplica por telefone
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      const uniqueContacts = newContacts.filter(c => {
+        const phone = stripDigits(c.phone);
+        if (existingPhones.has(phone)) return false;
+        existingPhones.add(phone);
+        return true;
+      });
+      
+      if (uniqueContacts.length < newContacts.length) {
+        const duplicates = newContacts.length - uniqueContacts.length;
+        console.log(`[loadFromLabels] ${duplicates} contato(s) duplicado(s) removido(s)`);
+      }
+      
+      setContacts(prev => [...prev, ...uniqueContacts]);
+      setSelectedContacts(prev => [...prev, ...uniqueContacts.map(c => c.id)]);
+      setStatus(`✅ ${uniqueContacts.length} contatos carregados das etiquetas (${newContacts.length - uniqueContacts.length} duplicados ignorados).`);
     } catch (e: any) {
       console.error('[loadFromLabels] Erro:', e);
       setStatus(`❌ Erro ao carregar contatos: ${e.message}`);
@@ -872,11 +902,25 @@ const Index = () => {
         phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
         tags: selectedGroups.map(g => g.name).join(', '),
         srcGroup: true
-      }));
+      })).filter(c => c.phone); // Remove contatos sem telefone válido
       
-      setContacts(prev => [...prev, ...newContacts]);
-      setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`✅ ${newContacts.length} participantes carregados dos grupos.`);
+      // Deduplica por telefone
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      const uniqueContacts = newContacts.filter(c => {
+        const phone = stripDigits(c.phone);
+        if (existingPhones.has(phone)) return false;
+        existingPhones.add(phone);
+        return true;
+      });
+      
+      if (uniqueContacts.length < newContacts.length) {
+        const duplicates = newContacts.length - uniqueContacts.length;
+        console.log(`[loadFromGroups] ${duplicates} contato(s) duplicado(s) removido(s)`);
+      }
+      
+      setContacts(prev => [...prev, ...uniqueContacts]);
+      setSelectedContacts(prev => [...prev, ...uniqueContacts.map(c => c.id)]);
+      setStatus(`✅ ${uniqueContacts.length} participantes carregados dos grupos (${newContacts.length - uniqueContacts.length} duplicados ignorados).`);
     } catch (e: any) {
       console.error('[loadFromGroups] Erro:', e);
       setStatus(`❌ Erro ao carregar participantes: ${e.message}`);
@@ -893,7 +937,18 @@ const Index = () => {
     try {
       console.log('[loadEmpreendimentos] Carregando lista de empreendimentos...');
       
-      const list = await fetchEmpreendimentos();
+      // Busca dados do tenant se ainda não tiver
+      let tenant = tenantData;
+      if (!tenant && accountId && originCanon) {
+        console.log('[loadEmpreendimentos] Buscando dados do tenant...');
+        tenant = await fetchTenantData(accountId, originCanon);
+        if (tenant) {
+          setTenantData(tenant);
+          console.log('[loadEmpreendimentos] Dados do tenant carregados:', tenant);
+        }
+      }
+      
+      const list = await fetchEmpreendimentos(tenant);
       
       console.log('[loadEmpreendimentos] Empreendimentos recebidos:', list);
       
@@ -918,7 +973,7 @@ const Index = () => {
     }
     
     const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
-    if (!selectedProfile || !originCanon || !accountId) {
+    if (!selectedProfile || !accountId) {
       setStatus('❌ Perfil não identificado ou dados incompletos.');
       return;
     }
@@ -936,7 +991,6 @@ const Index = () => {
         }));
       
       console.log('[loadFromEmps] Payload enviado:', {
-        origin: originCanon,
         accountId: accountId,
         inboxId: selectedProfile.inbox_id?.toString() || '',
         conversationId: conversationId || '',
@@ -944,7 +998,6 @@ const Index = () => {
       });
       
       const users = await fetchUsersByEmpreendimentos(
-        originCanon,
         accountId,
         selectedProfile.inbox_id?.toString() || '',
         conversationId || '',
@@ -968,9 +1021,23 @@ const Index = () => {
         };
       }).filter(c => c.phone); // Remove contatos sem telefone válido
       
-      setContacts(prev => [...prev, ...newContacts]);
-      setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`✅ ${newContacts.length} contatos carregados dos empreendimentos.`);
+      // Deduplica por telefone
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      const uniqueContacts = newContacts.filter(c => {
+        const phone = stripDigits(c.phone);
+        if (existingPhones.has(phone)) return false;
+        existingPhones.add(phone);
+        return true;
+      });
+      
+      if (uniqueContacts.length < newContacts.length) {
+        const duplicates = newContacts.length - uniqueContacts.length;
+        console.log(`[loadFromEmps] ${duplicates} contato(s) duplicado(s) removido(s)`);
+      }
+      
+      setContacts(prev => [...prev, ...uniqueContacts]);
+      setSelectedContacts(prev => [...prev, ...uniqueContacts.map(c => c.id)]);
+      setStatus(`✅ ${uniqueContacts.length} contatos carregados dos empreendimentos (${newContacts.length - uniqueContacts.length} duplicados ignorados).`);
     } catch (e: any) {
       console.error('[loadFromEmps] Erro:', e);
       setStatus(`❌ Erro ao carregar contatos: ${e.message}`);

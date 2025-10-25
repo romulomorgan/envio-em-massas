@@ -157,15 +157,22 @@ export async function fetchGroupParticipants(
   }).filter((x: any) => x.phone && (!own || digits(x.phone) !== own));
 }
 
-// Carregar empreendimentos
-export async function fetchEmpreendimentos() {
+// Carregar empreendimentos (usando credenciais do tenant se disponíveis)
+export async function fetchEmpreendimentos(tenantData?: any) {
+  // Usa credenciais do tenant se disponíveis, senão usa as globais
+  const email = tenantData?.cv_email || CV_API_EMAIL;
+  const token = tenantData?.cv_api_key || CV_API_TOKEN;
+  const url = tenantData?.cv_url || CV_API_URL;
+  
+  console.log('[fetchEmpreendimentos] Usando credenciais:', { email, url: url?.substring(0, 30) + '...' });
+  
   const headers = {
     accept: 'application/json',
-    email: CV_API_EMAIL,
-    token: CV_API_TOKEN
+    email,
+    token
   };
   
-  const response = await fetch(CV_API_URL, {
+  const response = await fetch(url, {
     method: 'GET',
     headers,
     mode: 'cors'
@@ -231,20 +238,20 @@ export async function fetchEmpreendimentos() {
 
 // Carregar usuários por empreendimentos
 export async function fetchUsersByEmpreendimentos(
-  origin: string,
   accountId: string,
   inboxId: string,
   conversationId: string,
   empreendimentos: Array<{ id: string; nome: string }>
 ) {
-  // Payload exato do arquivo original
+  // Payload EXATO do arquivo original (sem origin)
   const payload = {
-    origin,
     accountId,
     inboxId,
     conversationId,
     empreendimentos
   };
+  
+  console.log('[fetchUsersByEmpreendimentos] Enviando payload:', payload);
   
   const response = await fetch(WEBHOOK_LIST_ENTS, {
     method: 'POST',
@@ -254,6 +261,9 @@ export async function fetchUsersByEmpreendimentos(
   
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const data = await response.json();
+  
+  console.log('[fetchUsersByEmpreendimentos] Response:', data);
+  
   const arr = Array.isArray(data) ? data : (data?.users || data?.contatos || []);
   
   return arr.map((c: any) => ({
