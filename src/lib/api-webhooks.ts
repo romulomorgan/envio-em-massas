@@ -108,11 +108,9 @@ export async function fetchGroupParticipants(
   groups: Array<{ id: string; name: string }>
 ) {
   const payload = {
-    perfil: {
-      instancia: profile.evo_instance || '',
-      url: profile.evo_base_url || '',
-      token: profile.evo_apikey || profile.evo_token || ''
-    },
+    instancia: profile.evo_instance || '',
+    url: profile.evo_base_url || '',
+    token: profile.evo_apikey || profile.evo_token || '',
     groups
   };
   
