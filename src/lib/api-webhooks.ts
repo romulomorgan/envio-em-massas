@@ -237,10 +237,19 @@ export async function fetchUsersByEmpreendimentos(
   conversationId: string,
   empreendimentos: Array<{ id: string; nome: string }>
 ) {
+  // Payload exato do arquivo original
+  const payload = {
+    origin,
+    accountId,
+    inboxId,
+    conversationId,
+    empreendimentos
+  };
+  
   const response = await fetch(WEBHOOK_LIST_ENTS, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ origin, accountId, inboxId, conversationId, empreendimentos })
+    body: JSON.stringify(payload)
   });
   
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

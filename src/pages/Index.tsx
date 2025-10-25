@@ -652,6 +652,13 @@ const Index = () => {
     }
   }, [listMode, selectedProfileId, profiles]);
 
+  // Carrega empreendimentos automaticamente quando tiver acesso CV
+  useEffect(() => {
+    if (hasCvAccess && listMode === 'empreendimentos') {
+      loadEmpreendimentos();
+    }
+  }, [hasCvAccess, listMode]);
+
   // ========== FUNÇÕES DE CONTATOS ==========
   
   async function handleImportFile(file: File) {
@@ -668,8 +675,13 @@ const Index = () => {
         const tagsRaw = String(row['Tags'] || row['tags'] || row['Etiquetas'] || row['etiquetas'] || '').trim();
         
         if (phoneRaw) {
+          // Limpa caracteres especiais e normaliza para E.164
           const digits = stripDigits(phoneRaw);
+          if (!digits) continue; // Pula se não tiver dígitos
+          
           const phone = ensureE164(digits, defaultCountryCode);
+          if (!phone) continue; // Pula se normalização falhar
+          
           imported.push({
             id: uid(),
             name: name || 'Sem nome',
@@ -680,12 +692,17 @@ const Index = () => {
         }
       }
       
+      if (imported.length === 0) {
+        setStatus('⚠️ Nenhum contato válido encontrado no arquivo.');
+        return;
+      }
+      
       setContacts(prev => [...prev, ...imported]);
       // Seleciona automaticamente todos os contatos importados
       setSelectedContacts(prev => [...prev, ...imported.map(c => c.id)]);
-      setStatus(`Importados ${imported.length} contatos do arquivo.`);
+      setStatus(`✅ Importados ${imported.length} contatos do arquivo.`);
     } catch (e: any) {
-      setStatus(`Erro ao importar: ${e.message}`);
+      setStatus(`❌ Erro ao importar: ${e.message}`);
     }
   }
 
@@ -871,26 +888,24 @@ const Index = () => {
   async function loadEmpreendimentos() {
     if (!hasCvAccess || empsBusy) return;
     setEmpsBusy(true);
+    setStatus('Carregando empreendimentos...');
+    
     try {
-      const response = await fetch(WEBHOOK_LIST_ENTS, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          origin: originCanon,
-          account_id: accountId,
-          q: empQuery
-        })
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const list = Array.isArray(data?.data) ? data.data : [];
-      setEmpreendimentos(list.map((e: any) => ({
-        id: e.id,
-        title: e.nome || e.title || 'Sem título',
-        codigo: e.codigo
-      })));
+      console.log('[loadEmpreendimentos] Carregando lista de empreendimentos...');
+      
+      const list = await fetchEmpreendimentos();
+      
+      console.log('[loadEmpreendimentos] Empreendimentos recebidos:', list);
+      
+      setEmpreendimentos(list);
+      setStatus(list.length > 0 
+        ? `✅ ${list.length} empreendimento(s) encontrado(s).` 
+        : 'Nenhum empreendimento encontrado.'
+      );
     } catch (e: any) {
-      console.error('Erro ao carregar empreendimentos:', e);
+      console.error('[loadEmpreendimentos] Erro:', e);
+      setStatus(`❌ Erro ao carregar empreendimentos: ${e.message}`);
+      setEmpreendimentos([]);
     } finally {
       setEmpsBusy(false);
     }
@@ -898,38 +913,67 @@ const Index = () => {
 
   async function loadFromEmps() {
     if (!selectedEmpIds.length) {
-      setStatus('Selecione ao menos um empreendimento');
+      setStatus('❌ Selecione ao menos um empreendimento');
       return;
     }
+    
+    const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
+    if (!selectedProfile || !originCanon || !accountId) {
+      setStatus('❌ Perfil não identificado ou dados incompletos.');
+      return;
+    }
+    
     setEmpsBusy(true);
+    setStatus('Carregando contatos dos empreendimentos...');
+    
     try {
-      const response = await fetch(WEBHOOK_LIST_ENTS, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          origin: originCanon,
-          account_id: accountId,
-          source: 'empreendimentos',
-          emp_ids: selectedEmpIds
-        })
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const users = Array.isArray(data) ? data : [];
+      // Formata os empreendimentos selecionados com id + nome (como no arquivo original)
+      const selectedEmps = empreendimentos
+        .filter(e => selectedEmpIds.includes(e.id))
+        .map(e => ({
+          id: String(e.id),
+          nome: e.name || e.title || String(e.id)
+        }));
       
-      const newContacts: Contact[] = users.map((u: any) => ({
-        id: uid(),
-        name: u.name || 'Sem nome',
-        phone: ensureE164(stripDigits(u.phone || u.telefone || ''), defaultCountryCode),
-        tags: 'EMPREENDIMENTOS',
-        srcEmp: true
-      }));
+      console.log('[loadFromEmps] Payload enviado:', {
+        origin: originCanon,
+        accountId: accountId,
+        inboxId: selectedProfile.inbox_id?.toString() || '',
+        conversationId: conversationId || '',
+        empreendimentos: selectedEmps
+      });
+      
+      const users = await fetchUsersByEmpreendimentos(
+        originCanon,
+        accountId,
+        selectedProfile.inbox_id?.toString() || '',
+        conversationId || '',
+        selectedEmps
+      );
+      
+      console.log('[loadFromEmps] Usuários recebidos:', users);
+      
+      // Normaliza e valida os números de telefone
+      const newContacts: Contact[] = users.map((u: any) => {
+        const phoneRaw = u.phone || '';
+        const digits = stripDigits(phoneRaw);
+        const phone = ensureE164(digits, defaultCountryCode);
+        
+        return {
+          id: uid(),
+          name: u.name || 'Sem nome',
+          phone,
+          tags: selectedEmps.map(e => e.nome).join(', '),
+          srcEmp: true
+        };
+      }).filter(c => c.phone); // Remove contatos sem telefone válido
       
       setContacts(prev => [...prev, ...newContacts]);
       setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`${newContacts.length} contatos carregados de empreendimentos.`);
+      setStatus(`✅ ${newContacts.length} contatos carregados dos empreendimentos.`);
     } catch (e: any) {
-      setStatus(`Erro: ${e.message}`);
+      console.error('[loadFromEmps] Erro:', e);
+      setStatus(`❌ Erro ao carregar contatos: ${e.message}`);
     } finally {
       setEmpsBusy(false);
     }
