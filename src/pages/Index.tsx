@@ -645,6 +645,13 @@ const Index = () => {
     }
   }, [hasChatwootAccess, tenantConfig, originCanon, accountId]);
 
+  // Carrega grupos automaticamente quando listMode for 'grupos'
+  useEffect(() => {
+    if (listMode === 'grupos' && selectedProfileId && profiles.length > 0) {
+      loadGrupos();
+    }
+  }, [listMode, selectedProfileId, profiles]);
+
   // ========== FUNÇÕES DE CONTATOS ==========
   
   async function handleImportFile(file: File) {
@@ -771,28 +778,42 @@ const Index = () => {
   }
 
   async function loadGrupos() {
-    if (!hasChatwootAccess) return;
+    const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
+    if (!selectedProfile) {
+      setStatus('❌ Perfil não selecionado.');
+      return;
+    }
+
+    setGroupParticipantsBusy(true);
+    setStatus('Consultando grupos...');
+    
     try {
-      const response = await fetch(WEBHOOK_LIST_GROUPS, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          origin: originCanon,
-          account_id: accountId,
-          inbox_id: inboxId,
-          q: groupQuery
-        })
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const list = Array.isArray(data) ? data : [];
-      setGrupos(list.map((g: any) => ({
-        id: g.id,
-        name: g.subject || g.name || 'Sem nome',
-        subject: g.subject
-      })));
+      console.log('[loadGrupos] Carregando grupos do perfil:', selectedProfile);
+      
+      const groupsList = await fetchGroups(selectedProfile);
+      
+      console.log('[loadGrupos] Grupos recebidos:', groupsList);
+      
+      // Filtrar por query se houver
+      let filtered = groupsList;
+      if (groupQuery.trim()) {
+        const q = groupQuery.toLowerCase();
+        filtered = groupsList.filter(g => 
+          g.name.toLowerCase().includes(q)
+        );
+      }
+      
+      setGrupos(filtered);
+      setStatus(filtered.length > 0 
+        ? `✅ ${filtered.length} grupo(s) encontrado(s).` 
+        : 'Nenhum grupo encontrado.'
+      );
     } catch (e: any) {
-      console.error('Erro ao carregar grupos:', e);
+      console.error('[loadGrupos] Erro:', e);
+      setStatus(`❌ Erro ao carregar grupos: ${e.message}`);
+      setGrupos([]);
+    } finally {
+      setGroupParticipantsBusy(false);
     }
   }
 
@@ -803,58 +824,47 @@ const Index = () => {
       return;
     }
     
-    if (groupTarget === 'grupos') {
-      const newContacts: Contact[] = selectedGroupIds.map(gid => {
-        const g = grupos.find(gr => gr.id === gid);
-        return {
-          id: uid(),
-          name: g?.name || 'Grupo',
-          phone: gid,
-          tags: 'GRUPOS',
-          srcGroup: true
-        };
-      });
+    const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
+    if (!selectedProfile) {
+      setStatus('❌ Perfil não identificado.');
+      return;
+    }
+    
+    setGroupParticipantsBusy(true);
+    setStatus('Carregando participantes dos grupos...');
+    
+    try {
+      const selectedGroups = grupos.filter(g => selectedGroupIds.includes(g.id));
+      
+      console.log('[loadFromGroups] Carregando participantes dos grupos:', selectedGroups);
+      
+      const users = await fetchGroupParticipants(selectedProfile, selectedGroups);
+      
+      console.log('[loadFromGroups] Participantes recebidos:', users);
+      
+      if (!users.length) {
+        setLastParticipantsEmpty(true);
+        setTimeout(() => setLastParticipantsEmpty(false), 4000);
+        setStatus('Nenhum participante encontrado nos grupos selecionados.');
+        return;
+      }
+      
+      const newContacts: Contact[] = users.map((u: any) => ({
+        id: uid(),
+        name: u.name || 'Sem nome',
+        phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
+        tags: selectedGroups.map(g => g.name).join(', '),
+        srcGroup: true
+      }));
+      
       setContacts(prev => [...prev, ...newContacts]);
       setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`${newContacts.length} grupos adicionados.`);
-    } else {
-      setGroupParticipantsBusy(true);
-      try {
-        const response = await fetch(WEBHOOK_LIST_GROUP_PARTICIPANTS, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            origin: originCanon,
-            account_id: accountId,
-            inbox_id: inboxId,
-            group_ids: selectedGroupIds
-          })
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const users = Array.isArray(data) ? data : [];
-        
-        if (!users.length) {
-          setLastParticipantsEmpty(true);
-          setTimeout(() => setLastParticipantsEmpty(false), 4000);
-        }
-        
-        const newContacts: Contact[] = users.map((u: any) => ({
-          id: uid(),
-          name: u.name || 'Sem nome',
-          phone: ensureE164(stripDigits(u.id || ''), defaultCountryCode),
-          tags: 'GRUPOS',
-          srcGroup: true
-        }));
-        
-        setContacts(prev => [...prev, ...newContacts]);
-        setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-        setStatus(`${newContacts.length} participantes carregados.`);
-      } catch (e: any) {
-        setStatus(`Erro: ${e.message}`);
-      } finally {
-        setGroupParticipantsBusy(false);
-      }
+      setStatus(`✅ ${newContacts.length} participantes carregados dos grupos.`);
+    } catch (e: any) {
+      console.error('[loadFromGroups] Erro:', e);
+      setStatus(`❌ Erro ao carregar participantes: ${e.message}`);
+    } finally {
+      setGroupParticipantsBusy(false);
     }
   }
 
@@ -1761,30 +1771,9 @@ const Index = () => {
                         value={groupQuery}
                         onChange={(e) => setGroupQuery(e.target.value)}
                       />
-                      <SmallBtn onClick={loadGrupos}>
-                        Buscar
+                      <SmallBtn onClick={loadGrupos} disabled={groupParticipantsBusy}>
+                        {groupParticipantsBusy ? 'Carregando...' : 'Buscar'}
                       </SmallBtn>
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="groupTarget"
-                          checked={groupTarget === 'grupos'}
-                          onChange={() => setGroupTarget('grupos')}
-                        />
-                        <span className="text-sm">Enviar para os grupos</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="groupTarget"
-                          checked={groupTarget === 'participantes'}
-                          onChange={() => setGroupTarget('participantes')}
-                        />
-                        <span className="text-sm">Enviar para participantes</span>
-                      </label>
                     </div>
                     
                     {needSelectGroupHint && (
@@ -1800,26 +1789,34 @@ const Index = () => {
                     )}
                     
                     <div className="border border-border rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
-                      {grupos.map(grupo => (
-                        <label key={grupo.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded">
-                          <input
-                            type="checkbox"
-                            checked={selectedGroupIds.includes(grupo.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedGroupIds(prev => [...prev, grupo.id]);
-                              } else {
-                                setSelectedGroupIds(prev => prev.filter(x => x !== grupo.id));
-                              }
-                            }}
-                          />
-                          <span className="text-sm">{grupo.name}</span>
-                        </label>
-                      ))}
-                      {!grupos.length && (
+                      {groupParticipantsBusy && !grupos.length ? (
                         <div className="text-sm text-muted-foreground text-center py-4">
-                          Nenhum grupo encontrado
+                          Consultando grupos...
                         </div>
+                      ) : (
+                        <>
+                          {grupos.map(grupo => (
+                            <label key={grupo.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded">
+                              <input
+                                type="checkbox"
+                                checked={selectedGroupIds.includes(grupo.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedGroupIds(prev => [...prev, grupo.id]);
+                                  } else {
+                                    setSelectedGroupIds(prev => prev.filter(x => x !== grupo.id));
+                                  }
+                                }}
+                              />
+                              <span className="text-sm">{grupo.name}</span>
+                            </label>
+                          ))}
+                          {!grupos.length && !groupParticipantsBusy && (
+                            <div className="text-sm text-muted-foreground text-center py-4">
+                              Nenhum grupo encontrado
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                     
