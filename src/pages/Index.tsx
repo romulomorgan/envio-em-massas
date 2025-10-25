@@ -717,35 +717,54 @@ const Index = () => {
       setTimeout(() => setNeedSelectLabelHint(false), 3000);
       return;
     }
+    
+    const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
+    if (!selectedProfile || !originCanon || !accountId) {
+      setStatus('❌ Perfil não identificado ou dados incompletos.');
+      return;
+    }
+    
     setLabelsBusy(true);
+    setStatus('Carregando contatos das etiquetas...');
+    
     try {
-      const response = await fetch(WEBHOOK_LIST_USERS, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          origin: originCanon,
-          account_id: accountId,
-          source: 'etiquetas',
-          labels: selectedLabelIds
-        })
+      const selectedLabels = labels.filter(l => selectedLabelIds.includes(l.id)).map(l => ({
+        id: String(l.id),
+        title: l.title
+      }));
+      
+      console.log('[loadFromLabels] Payload enviado:', {
+        origin: originCanon,
+        accountId: accountId,
+        inboxId: selectedProfile.inbox_id?.toString() || '',
+        conversationId: '',
+        labels: selectedLabels
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const users = Array.isArray(data) ? data : [];
+      
+      const users = await fetchUsersByLabels(
+        originCanon,
+        accountId,
+        selectedProfile.inbox_id?.toString() || '',
+        '', // conversationId não é obrigatório
+        selectedLabels
+      );
+      
+      console.log('[loadFromLabels] Usuários recebidos:', users);
       
       const newContacts: Contact[] = users.map((u: any) => ({
         id: uid(),
         name: u.name || 'Sem nome',
-        phone: ensureE164(stripDigits(u.phone_number || u.phone || ''), defaultCountryCode),
-        tags: 'ETIQUETAS',
+        phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
+        tags: selectedLabels.map(l => l.title).join(', '),
         srcLabel: true
       }));
       
       setContacts(prev => [...prev, ...newContacts]);
       setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`${newContacts.length} contatos carregados de etiquetas.`);
+      setStatus(`✅ ${newContacts.length} contatos carregados das etiquetas.`);
     } catch (e: any) {
-      setStatus(`Erro: ${e.message}`);
+      console.error('[loadFromLabels] Erro:', e);
+      setStatus(`❌ Erro ao carregar contatos: ${e.message}`);
     } finally {
       setLabelsBusy(false);
     }
