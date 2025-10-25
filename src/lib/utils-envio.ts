@@ -149,26 +149,98 @@ export const WEBHOOK_LIST_ENTS = 'https://web.iadmin.ai/webhook/usuario-por-empr
 
 export function extractReasonFromLog(l: any): string {
   try {
-    const http = l.http_status ?? l.http_code;
-    if (l.level === 'error') {
-      const j = typeof l.message_json === 'string' ? JSON.parse(l.message_json) : (l.message_json || {});
-      const msg = j?.error?.message || j?.message || j?.response?.message || j?.status || j?.error || JSON.stringify(j);
-      return `HTTP ${http || '-'} ${msg || ''}`.trim();
+    const http = l.http_status ?? l.http_code ?? l.status_code;
+    
+    // Para erros, extrai a mensagem de erro detalhada
+    if (l.level === 'error' || l.level === 'fail' || l.level === 'failed') {
+      let msgObj = l.message_json;
+      
+      // Se message_json é string, tenta parsear
+      if (typeof msgObj === 'string') {
+        try {
+          msgObj = JSON.parse(msgObj);
+        } catch (e) {
+          // Se falhar o parse, usa a string diretamente
+          return `${http ? `HTTP ${http}: ` : ''}${msgObj}`;
+        }
+      }
+      
+      // Extrai mensagem de erro de vários possíveis campos
+      const errorMsg = 
+        msgObj?.error?.message || 
+        msgObj?.message || 
+        msgObj?.error_message ||
+        msgObj?.response?.message || 
+        msgObj?.response?.data?.message ||
+        msgObj?.status || 
+        msgObj?.error || 
+        l.message ||
+        l.error_message ||
+        '';
+      
+      // Se encontrou mensagem, formata com HTTP code
+      if (errorMsg) {
+        const cleanMsg = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
+        return http ? `HTTP ${http}: ${cleanMsg}` : cleanMsg;
+      }
+      
+      // Se não encontrou mensagem mas tem HTTP code
+      if (http) {
+        return `HTTP ${http}`;
+      }
+      
+      // Última tentativa: usar todo o message_json
+      if (msgObj && Object.keys(msgObj).length > 0) {
+        return JSON.stringify(msgObj);
+      }
     }
+    
+    // Para não-erros, retorna apenas o HTTP code se houver
     return http ? `HTTP ${http}` : '';
-  } catch (_) {
+  } catch (e) {
+    console.error('[extractReasonFromLog] Erro:', e);
     return '';
   }
 }
 
 export function extractNumberFromLog(l: any): string {
+  // Lista de possíveis campos onde o telefone pode estar
   const tryList = [
-    l?.to_number, l?.to, l?.number, l?.recipient, l?.phone, l?.telefone,
-    l?.request_json?.number, l?.request_json?.to, l?.request_json?.body?.number
+    l?.to_number, 
+    l?.to, 
+    l?.number, 
+    l?.recipient, 
+    l?.phone, 
+    l?.telefone,
+    l?.request_json?.number, 
+    l?.request_json?.to, 
+    l?.request_json?.body?.number,
+    l?.request_json?.body?.to,
+    l?.destination,
+    l?.recipient_number
   ];
+  
+  // Tenta extrair de campos diretos
   for (const v of tryList) {
-    const cleaned = String(v || '').replace(/\D+/g, '');
-    if (cleaned) return cleaned;
+    if (v) {
+      const cleaned = String(v).replace(/\D+/g, '');
+      if (cleaned && cleaned.length >= 10) return cleaned;
+    }
   }
+  
+  // Tenta parsear request_json se for string
+  if (typeof l?.request_json === 'string') {
+    try {
+      const parsed = JSON.parse(l.request_json);
+      const num = parsed?.number || parsed?.to || parsed?.body?.number || parsed?.body?.to;
+      if (num) {
+        const cleaned = String(num).replace(/\D+/g, '');
+        if (cleaned && cleaned.length >= 10) return cleaned;
+      }
+    } catch (e) {
+      // Ignora erros de parsing
+    }
+  }
+  
   return '';
 }

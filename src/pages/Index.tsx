@@ -1329,16 +1329,24 @@ const Index = () => {
         return;
       }
       
+      // Contar sucessos e falhas
+      const totalLogs = logs.length;
+      const sucessos = logs.filter((log: any) => 
+        log.level === 'success' || log.level === 'info' || log.http_status === 200 || log.http_status === 201
+      ).length;
+      const falhas = totalLogs - sucessos;
+      
       // Preparar dados para Excel com Numero, Status e Motivo
       const excelData = logs.map((log: any) => {
         const numero = extractNumberFromLog(log);
-        const status = (log.level === 'success' || log.level === 'info' || log.http_status === 200 || log.http_status === 201) ? 'Sucesso' : 'Falha';
-        const motivo = status === 'Falha' ? extractReasonFromLog(log) : '';
+        const isSuccess = log.level === 'success' || log.level === 'info' || log.http_status === 200 || log.http_status === 201;
+        const status = isSuccess ? 'Sucesso' : 'Falha';
+        const motivo = !isSuccess ? extractReasonFromLog(log) : '';
         
         return {
-          Numero: numero || '-',
+          Numero: numero ? formatPhoneLocal(numero) : '-',
           Status: status,
-          Motivo: motivo
+          Motivo: motivo || ''
         };
       });
       
@@ -1351,7 +1359,7 @@ const Index = () => {
       const fileName = `Campanha_logs_${queueName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`;
       XLSX.writeFile(wb, fileName);
       
-      setStatus(`✅ Relatório baixado: ${fileName}`);
+      setStatus(`✅ Relatório baixado: ${fileName} | Total: ${totalLogs} | Sucessos: ${sucessos} | Falhas: ${falhas}`);
     } catch (e: any) {
       console.error('[handleDownloadExcel] Erro:', e);
       setStatus(`❌ Erro ao baixar relatório: ${e.message}`);
