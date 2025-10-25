@@ -638,6 +638,13 @@ const Index = () => {
     }
   }, [accountId, originCanon]);
 
+  // Carrega etiquetas automaticamente quando tiver acesso ao Chatwoot
+  useEffect(() => {
+    if (hasChatwootAccess && tenantConfig?.admin_apikey && originCanon && accountId) {
+      loadLabels();
+    }
+  }, [hasChatwootAccess, tenantConfig, originCanon, accountId]);
+
   // ========== FUNÇÕES DE CONTATOS ==========
   
   async function handleImportFile(file: File) {
@@ -676,35 +683,28 @@ const Index = () => {
   }
 
   async function loadLabels() {
-    if (!hasChatwootAccess || labelsBusy) return;
+    if (!hasChatwootAccess || labelsBusy || !tenantConfig?.admin_apikey || !originCanon || !accountId) return;
+    
     setLabelsBusy(true);
+    setStatus('Consultando etiquetas...');
+    
     try {
       if (labelsReqRef.current.controller) labelsReqRef.current.controller.abort();
       labelsReqRef.current.controller = new AbortController();
       
-      const response = await fetch(WEBHOOK_LIST_USERS, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          origin: originCanon, 
-          account_id: accountId,
-          source: 'etiquetas',
-          q: labelQuery 
-        }),
-        signal: labelsReqRef.current.controller.signal
-      });
+      const result = await fetchLabels(
+        tenantConfig.admin_apikey,
+        originCanon,
+        accountId
+      );
       
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const list = Array.isArray(data) ? data : [];
-      setLabels(list.map((item: any) => ({
-        id: item.id,
-        title: item.title || item.name || 'Sem título',
-        color: item.color
-      })));
+      setLabels(result);
+      setStatus(`${result.length} etiquetas encontradas.`);
+      console.log('[loadLabels] Etiquetas carregadas:', result);
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error('Erro ao carregar etiquetas:', e);
+        setStatus(`Erro ao carregar etiquetas: ${e.message}`);
       }
     } finally {
       setLabelsBusy(false);
@@ -1694,26 +1694,34 @@ const Index = () => {
                     )}
                     
                     <div className="border border-border rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
-                      {labels.map(label => (
-                        <label key={label.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded">
-                          <input
-                            type="checkbox"
-                            checked={selectedLabelIds.includes(label.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedLabelIds(prev => [...prev, label.id]);
-                              } else {
-                                setSelectedLabelIds(prev => prev.filter(x => x !== label.id));
-                              }
-                            }}
-                          />
-                          <span className="text-sm">{label.title}</span>
-                        </label>
-                      ))}
-                      {!labels.length && (
+                      {labelsBusy && !labels.length ? (
                         <div className="text-sm text-muted-foreground text-center py-4">
-                          Nenhuma etiqueta encontrada
+                          Consultando etiquetas...
                         </div>
+                      ) : (
+                        <>
+                          {labels.map(label => (
+                            <label key={label.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded">
+                              <input
+                                type="checkbox"
+                                checked={selectedLabelIds.includes(label.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedLabelIds(prev => [...prev, label.id]);
+                                  } else {
+                                    setSelectedLabelIds(prev => prev.filter(x => x !== label.id));
+                                  }
+                                }}
+                              />
+                              <span className="text-sm">{label.title}</span>
+                            </label>
+                          ))}
+                          {!labels.length && !labelsBusy && (
+                            <div className="text-sm text-muted-foreground text-center py-4">
+                              Nenhuma etiqueta encontrada
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                     
