@@ -135,74 +135,17 @@ export function downloadBlob(filename: string, data: string | ArrayBuffer, mimeT
   URL.revokeObjectURL(url);
 }
 
-// Configurações globais
-import { 
-  NOCO_URL, 
-  NOCO_TOKEN, 
-  NOCO_TENANT_TABLE_ID,
-  NOCO_TENANT_VIEW_ID,
-  setTenantConfig,
-  CV_API_URL,
-  CV_API_EMAIL,
-  CV_API_TOKEN
-} from './config';
+// Credenciais da API CV (empreendimentos)
+export const CV_API_URL = 'https://lumis.cvcrm.com.br/api/cvio/empreendimento';
+export const CV_API_EMAIL = 'integracao@integracao.com.br';
+export const CV_API_TOKEN = '595582bb36d0cb139b11239f8b0852aa8baf1d49';
 
-export { CV_API_URL, CV_API_EMAIL, CV_API_TOKEN };
-
-// Webhooks (exportados para api-webhooks.ts)
-export const WEBHOOK_LIST_LABELS = "https://web.iadmin.ai/webhook/listar-etiquetas-empresas";
-export const WEBHOOK_LIST_USERS = "https://web.iadmin.ai/webhook/usuario-por-marcadores";
-export const WEBHOOK_LIST_ENTS = "https://web.iadmin.ai/webhook/usuario-por-empreendimentos";
-export const WEBHOOK_LIST_GROUPS = "https://web.iadmin.ai/webhook/listar-grupos-do-whatsapp";
-export const WEBHOOK_LIST_GROUP_PARTICIPANTS = "https://web.iadmin.ai/webhook/listar-participantes-de-grupos";
-
-// Buscar configuração do tenant da tabela empresas_tokens
-export async function fetchTenantConfig(chatwootOrigin: string) {
-  try {
-    const where = encodeURIComponent(`(chatwoot_origin,eq,${chatwootOrigin})`);
-    const url = `${NOCO_URL}/api/v2/tables/${NOCO_TENANT_TABLE_ID}/records?offset=0&limit=25&where=${where}&viewId=${NOCO_TENANT_VIEW_ID}`;
-    
-    const response = await fetch(url, {
-      headers: { 'xc-token': NOCO_TOKEN }
-    });
-    
-    if (!response.ok) {
-      console.error('Erro ao buscar tenant config:', response.status);
-      return null;
-    }
-    
-    const data = await response.json();
-    const list = data?.list || [];
-    
-    if (list.length === 0) {
-      console.warn('Nenhum tenant encontrado para origin:', chatwootOrigin);
-      return null;
-    }
-    
-    const tenant = list[0];
-    
-    // Configurar variáveis globais do CV
-    if (tenant.cv_url && tenant.cv_email && tenant.cv_apikey) {
-      setTenantConfig(tenant.cv_url, tenant.cv_email, tenant.cv_apikey);
-    }
-    
-    return {
-      id: tenant.Id || tenant.id,
-      chatwoot_origin: tenant.chatwoot_origin,
-      account_id: tenant.account_id,
-      is_active: tenant.is_active ?? true,
-      cv_active: tenant.cv_active ?? false,
-      admin_apikey: tenant.admin_apikey,
-      cv_email: tenant.cv_email,
-      cv_apikey: tenant.cv_apikey,
-      cv_url: tenant.cv_url,
-      default: tenant.default ?? false
-    };
-  } catch (error) {
-    console.error('Erro ao buscar tenant config:', error);
-    return null;
-  }
-}
+// Webhooks do sistema
+export const WEBHOOK_LIST_LABELS = 'https://web.iadmin.ai/webhook/listar-etiquetas-empresas';
+export const WEBHOOK_LIST_USERS = 'https://web.iadmin.ai/webhook/usuario-por-marcadores';
+export const WEBHOOK_LIST_GROUPS = 'https://web.iadmin.ai/webhook/listar-grupos-do-whatsapp';
+export const WEBHOOK_LIST_GROUP_PARTICIPANTS = 'https://web.iadmin.ai/webhook/listar-participantes-de-grupos';
+export const WEBHOOK_LIST_ENTS = 'https://web.iadmin.ai/webhook/usuario-por-empreendimentos';
 
 export function extractReasonFromLog(l: any): string {
   try {

@@ -18,14 +18,3 @@ export const WEBHOOK_LIST_GROUP_PARTICIPANTS = "https://web.iadmin.ai/webhook/li
 
 export const NOCO_TENANT_TABLE_ID = 'mv4m28s2v1bs0me';
 export const NOCO_TENANT_VIEW_ID = 'vwvmrsd2sbbilhfq';
-
-// Exports dinâmicos do tenant (empresas_tokens)
-export let CV_API_URL = '';
-export let CV_API_EMAIL = '';
-export let CV_API_TOKEN = '';
-
-export function setTenantConfig(cvUrl: string, cvEmail: string, cvToken: string) {
-  CV_API_URL = cvUrl;
-  CV_API_EMAIL = cvEmail;
-  CV_API_TOKEN = cvToken;
-}

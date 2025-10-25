@@ -40,13 +40,19 @@ import {
 } from '@/lib/utils-envio';
 import { supaRemove } from '@/lib/supabase-client';
 import {
+  WEBHOOK_LIST_USERS,
+  WEBHOOK_LIST_ENTS,
+  WEBHOOK_LIST_GROUPS,
+  WEBHOOK_LIST_GROUP_PARTICIPANTS,
+  WEBHOOK_LIST_LABELS,
   NOCO_TABLE_PROFILES_ID,
+  NOCO_TENANT_TABLE_ID,
+  NOCO_TENANT_VIEW_ID,
   NOCO_URL,
   NOCO_TOKEN,
   TABLE_SEND_QUEUE_ID,
   TABLE_SEND_LOGS_ID
 } from '@/lib/config';
-import { fetchTenantConfig } from '@/lib/utils-envio';
 import {
   queueCreate,
   queuePatch,
@@ -247,19 +253,68 @@ const Index = () => {
   const pageSize = 10;
   const labelsReqRef = useRef<{ controller: AbortController | null }>({ controller: null });
 
-  // Carregar configuração do tenant (busca na tabela empresas_tokens)
-  async function loadTenantConfigFromEmpresas() {
+  // Carregar configuração do tenant (busca na tabela evo_profiles)
+  async function loadTenantConfig() {
     if (!originCanon) {
       console.log('[tenantConfig] Aguardando originCanon...');
       return null;
     }
 
     try {
-      console.log('[tenantConfig] Buscando tenant na empresas_tokens:', { originCanon });
-      
-      const tenant = await fetchTenantConfig(originCanon);
-      
-      if (!tenant) {
+      console.log('[tenantConfig] Buscando perfil na evo_profiles:', { originCanon, accountId });
+      const baseUrl = NOCO_URL;
+      let data: any = null;
+
+      // Se temos account_id, busca com ambos os filtros na tabela evo_profiles
+      if (accountId) {
+        const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
+        const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
+        console.log('[tenantConfig] URL com account_id (evo_profiles):', url);
+        data = await nocoGET(url).catch((err) => {
+          console.error('[tenantConfig] Erro na busca com account_id:', err);
+          return null;
+        });
+      }
+
+      // Se não encontrou com account_id ou não tem account_id, busca só pelo origin
+      if (!data || !Array.isArray(data.list) || data.list.length === 0) {
+        const where = `(chatwoot_origin,eq,${originCanon})`;
+        const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
+        console.log('[tenantConfig] URL sem account_id (evo_profiles):', url);
+        data = await nocoGET(url).catch((err) => {
+          console.error('[tenantConfig] Erro na busca sem account_id:', err);
+          return null;
+        });
+      }
+
+      const list = (Array.isArray(data?.list) ? data.list : []).map((r: any) => ({
+        id: String(r.Id ?? r.id ?? ''),
+        chatwoot_origin: (r.chatwoot_origin || '').trim(),
+        account_id: String(r.account_id ?? ''),
+        is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
+        cv_activa: !!(r.cv_activa === true || r.cv_activa === 'true' || r.cv_activa === 1 || r.cv_active === true || r.cv_active === 'true' || r.cv_active === 1),
+        admin_apikey: r.admin_apikey || '',
+        cv_email: r.cv_email || '',
+        cv_apikey: r.cv_apikey || '',
+        default: !!r.default
+      }));
+
+      console.log('[tenantConfig] Records completos do NocoDB:', data?.list?.map((r: any) => ({
+        Id: r.Id,
+        chatwoot_origin: r.chatwoot_origin,
+        account_id: r.account_id,
+        admin_apikey: r.admin_apikey ? '✅ presente' : '❌ ausente',
+        admin_apikey_value: r.admin_apikey
+      })));
+
+      console.log('[tenantConfig] Lista recebida:', list);
+
+      // Filtra pelo accountId se disponível
+      const filtered = accountId 
+        ? list.filter((r: any) => String(r.account_id) === String(accountId))
+        : list;
+
+      if (!filtered.length) {
         console.log('[tenantConfig] ❌ Nenhum tenant encontrado');
         setTenantConfig(null);
         setHasChatwootAccess(false);
@@ -267,41 +322,35 @@ const Index = () => {
         return null;
       }
 
-      console.log('[tenantConfig] ✅ Tenant escolhido:', tenant);
+      const chosen = filtered.find((x: any) => x.default) || filtered[0];
+      console.log('[tenantConfig] ✅ Tenant escolhido:', chosen);
 
       // Atualiza accountId se não estava definido
-      if (!accountId && tenant.account_id) {
-        console.log('[tenantConfig] Definindo accountId:', tenant.account_id);
-        setAccountId(String(tenant.account_id));
+      if (!accountId && chosen && chosen.account_id) {
+        console.log('[tenantConfig] Definindo accountId:', chosen.account_id);
+        setAccountId(String(chosen.account_id));
       }
 
-      setTenantConfig(tenant);
-      setHasChatwootAccess(!!(tenant.admin_apikey) && tenant.is_active === true);
-      setHasCvAccess(tenant.cv_active === true);
+      setTenantConfig(chosen);
+      setHasChatwootAccess(!!(chosen.admin_apikey) && chosen.is_active === true);
+      setHasCvAccess(chosen.cv_activa || chosen.cv_active);
 
       // Expor variáveis globais
       if (typeof window !== 'undefined') {
-        (window as any).__ADMIN_APIKEY__ = tenant.admin_apikey || '';
-        (window as any).__ACCOUNT_ID__ = String(tenant.account_id || accountId || '');
+        (window as any).__ADMIN_APIKEY__ = chosen.admin_apikey || '';
+        (window as any).__ACCOUNT_ID__ = String(chosen.account_id || accountId || '');
         (window as any).__INBOX_ID__ = String(inboxId || '');
         (window as any).__CONVERSATION_ID__ = String(conversationId || '');
         (window as any).__FORCE_ORIGIN__ = originCanon;
         console.log('[tenantConfig] Variáveis globais definidas:', {
-          __ADMIN_APIKEY__: tenant.admin_apikey ? '✅ definido' : '❌ vazio',
-          __ACCOUNT_ID__: tenant.account_id || accountId,
+          __ADMIN_APIKEY__: chosen.admin_apikey ? '✅ definido' : '❌ vazio',
+          __ACCOUNT_ID__: chosen.account_id || accountId,
           __INBOX_ID__: inboxId,
-          __CONVERSATION_ID__: conversationId,
-          cv_active: tenant.cv_active
+          __CONVERSATION_ID__: conversationId
         });
       }
 
-      // Carregar labels automaticamente após carregar tenant
-      if (tenant.admin_apikey) {
-        console.log('[tenantConfig] Carregando labels automaticamente...');
-        setTimeout(() => loadLabelsAuto(), 500);
-      }
-
-      return tenant;
+      return chosen;
     } catch (e) {
       console.error('[tenantConfig] Erro geral:', e);
       setTenantConfig(null);
@@ -313,7 +362,7 @@ const Index = () => {
 
   useEffect(() => {
     if (originCanon) {
-      loadTenantConfigFromEmpresas();
+      loadTenantConfig();
     }
   }, [originCanon, accountId]);
 
@@ -531,46 +580,31 @@ const Index = () => {
       
       console.log('[Perfis] Resposta NocoDB completa:', list);
       
-      const mappedProfiles = await Promise.all(list.map(async (r: any) => {
-        const profile = {
-          Id: r.Id,
-          name: r.name || r.profile_name || 'Perfil',
-          evo_base_url: r.evo_base_url || '',
-          evo_instance: r.evo_instance || '',
-          evo_apikey: r.evo_apikey || '',
-          chatwoot_origin: r.chatwoot_origin,
-          account_id: r.account_id,
-          inbox_id: r.inbox_id,
-          admin_apikey: r.admin_apikey || r.adimin_apikey || '',
-          default: !!(r.default === true || r.default === 'true' || r.default === 1),
-          is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
-          item_delay: Number(r.item_delay) || 3,
-          item_variance: Number(r.item_variance) || 4,
-          contact_delay: Number(r.contact_delay) || 10,
-          contact_variance: Number(r.contact_variance) || 10,
-          connection_status: null as 'open' | 'close' | 'connecting' | null
-        };
-        
-        // Buscar status de conexão
-        if (profile.evo_base_url && profile.evo_instance && profile.evo_apikey) {
-          try {
-            profile.connection_status = await fetchConnectionStatus(profile);
-          } catch (e) {
-            console.error('[Perfis] Erro ao buscar status de conexão:', e);
-          }
-        }
-        
-        return profile;
+      const mappedProfiles = list.map((r: any) => ({
+        Id: r.Id,
+        name: r.name || r.profile_name || 'Perfil',
+        evo_base_url: r.evo_base_url || '',
+        evo_instance: r.evo_instance || '',
+        evo_apikey: r.evo_apikey || '',
+        chatwoot_origin: r.chatwoot_origin,
+        account_id: r.account_id,
+        inbox_id: r.inbox_id,
+        admin_apikey: r.admin_apikey || r.adimin_apikey || '',
+        default: !!(r.default === true || r.default === 'true' || r.default === 1),
+        is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
+        item_delay: Number(r.item_delay) || 3,
+        item_variance: Number(r.item_variance) || 4,
+        contact_delay: Number(r.contact_delay) || 10,
+        contact_variance: Number(r.contact_variance) || 10
       }));
       
-      console.log('[Perfis] Perfis mapeados com status:', mappedProfiles.map(p => ({
+      console.log('[Perfis] Perfis mapeados:', mappedProfiles.map(p => ({
         Id: p.Id,
         name: p.name,
         evo_base_url: p.evo_base_url ? '✅' : '❌',
         evo_instance: p.evo_instance ? '✅' : '❌',
         evo_apikey: p.evo_apikey ? '✅' : '❌',
-        is_active: p.is_active,
-        connection_status: p.connection_status
+        is_active: p.is_active
       })));
       
       // Ordena perfis: perfil com default=true primeiro
@@ -641,34 +675,28 @@ const Index = () => {
     }
   }
 
-  // Carregar labels automaticamente ao iniciar
-  async function loadLabelsAuto() {
-    if (!tenantConfig?.admin_apikey) return;
-    setLabelsBusy(true);
-    try {
-      const list = await fetchLabels(
-        tenantConfig.admin_apikey,
-        originCanon,
-        String(accountId)
-      );
-      setLabels(list);
-      console.log('[Labels] Carregadas automaticamente:', list.length);
-    } catch (e: any) {
-      console.error('[Labels] Erro ao carregar automaticamente:', e);
-    } finally {
-      setLabelsBusy(false);
-    }
-  }
-
   async function loadLabels() {
-    if (!tenantConfig?.admin_apikey || labelsBusy) return;
+    if (!hasChatwootAccess || labelsBusy) return;
     setLabelsBusy(true);
     try {
-      const list = await fetchLabels(
-        tenantConfig.admin_apikey,
-        originCanon,
-        String(accountId)
-      );
+      if (labelsReqRef.current.controller) labelsReqRef.current.controller.abort();
+      labelsReqRef.current.controller = new AbortController();
+      
+      const response = await fetch(WEBHOOK_LIST_USERS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          origin: originCanon, 
+          account_id: accountId,
+          source: 'etiquetas',
+          q: labelQuery 
+        }),
+        signal: labelsReqRef.current.controller.signal
+      });
+      
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : [];
       setLabels(list.map((item: any) => ({
         id: item.id,
         title: item.title || item.name || 'Sem título',
@@ -691,19 +719,24 @@ const Index = () => {
     }
     setLabelsBusy(true);
     try {
-      const selectedLabels = labels.filter(l => selectedLabelIds.includes(l.id));
-      const users = await fetchUsersByLabels(
-        originCanon,
-        String(accountId),
-        String(inboxId),
-        String(conversationId),
-        selectedLabels as any
-      );
+      const response = await fetch(WEBHOOK_LIST_USERS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: originCanon,
+          account_id: accountId,
+          source: 'etiquetas',
+          labels: selectedLabelIds
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const users = Array.isArray(data) ? data : [];
       
       const newContacts: Contact[] = users.map((u: any) => ({
         id: uid(),
         name: u.name || 'Sem nome',
-        phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
+        phone: ensureE164(stripDigits(u.phone_number || u.phone || ''), defaultCountryCode),
         tags: 'ETIQUETAS',
         srcLabel: true
       }));
@@ -719,28 +752,30 @@ const Index = () => {
   }
 
   async function loadGrupos() {
-    const profile = profiles.find(p => String(p.Id) === selectedProfileId);
-    if (!profile) {
-      setStatus('Selecione um perfil de conexão primeiro');
-      return;
-    }
-    
+    if (!hasChatwootAccess) return;
     try {
-      const list = await fetchGroups(profile);
-      setGrupos(list);
-      setStatus(`${list.length} grupos carregados.`);
+      const response = await fetch(WEBHOOK_LIST_GROUPS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: originCanon,
+          account_id: accountId,
+          inbox_id: inboxId,
+          q: groupQuery
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : [];
+      setGrupos(list.map((g: any) => ({
+        id: g.id,
+        name: g.subject || g.name || 'Sem nome',
+        subject: g.subject
+      })));
     } catch (e: any) {
       console.error('Erro ao carregar grupos:', e);
-      setStatus(`Erro ao carregar grupos: ${e.message}`);
     }
   }
-
-  // Carregar grupos automaticamente ao clicar no botão "Grupos"
-  useEffect(() => {
-    if (listMode === 'grupos' && selectedProfileId && grupos.length === 0) {
-      loadGrupos();
-    }
-  }, [listMode, selectedProfileId]);
 
   async function loadFromGroups() {
     if (!selectedGroupIds.length) {
@@ -766,13 +801,19 @@ const Index = () => {
     } else {
       setGroupParticipantsBusy(true);
       try {
-        const profile = profiles.find(p => String(p.Id) === selectedProfileId);
-        if (!profile) {
-          throw new Error('Perfil não encontrado');
-        }
-        
-        const selectedGroups = grupos.filter(g => selectedGroupIds.includes(g.id));
-        const users = await fetchGroupParticipants(profile, selectedGroups);
+        const response = await fetch(WEBHOOK_LIST_GROUP_PARTICIPANTS, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            origin: originCanon,
+            account_id: accountId,
+            inbox_id: inboxId,
+            group_ids: selectedGroupIds
+          })
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const users = Array.isArray(data) ? data : [];
         
         if (!users.length) {
           setLastParticipantsEmpty(true);
@@ -782,7 +823,7 @@ const Index = () => {
         const newContacts: Contact[] = users.map((u: any) => ({
           id: uid(),
           name: u.name || 'Sem nome',
-          phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
+          phone: ensureE164(stripDigits(u.id || ''), defaultCountryCode),
           tags: 'GRUPOS',
           srcGroup: true
         }));
@@ -802,23 +843,29 @@ const Index = () => {
     if (!hasCvAccess || empsBusy) return;
     setEmpsBusy(true);
     try {
-      const list = await fetchEmpreendimentos();
-      setEmpreendimentos(list);
-      setStatus(`${list.length} empreendimentos carregados.`);
+      const response = await fetch(WEBHOOK_LIST_ENTS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: originCanon,
+          account_id: accountId,
+          q: empQuery
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const list = Array.isArray(data?.data) ? data.data : [];
+      setEmpreendimentos(list.map((e: any) => ({
+        id: e.id,
+        title: e.nome || e.title || 'Sem título',
+        codigo: e.codigo
+      })));
     } catch (e: any) {
       console.error('Erro ao carregar empreendimentos:', e);
-      setStatus(`Erro ao carregar empreendimentos: ${e.message}`);
     } finally {
       setEmpsBusy(false);
     }
   }
-
-  // Carregar empreendimentos automaticamente ao clicar no botão "Empreendimentos"
-  useEffect(() => {
-    if (listMode === 'empreendimentos' && hasCvAccess && empreendimentos.length === 0) {
-      loadEmpreendimentos();
-    }
-  }, [listMode, hasCvAccess]);
 
   async function loadFromEmps() {
     if (!selectedEmpIds.length) {
@@ -827,23 +874,24 @@ const Index = () => {
     }
     setEmpsBusy(true);
     try {
-      const selectedEmps = empreendimentos.filter(e => selectedEmpIds.includes(e.id)).map(e => ({
-        id: e.id,
-        nome: e.title || e.name || ''
-      }));
-      
-      const users = await fetchUsersByEmpreendimentos(
-        originCanon,
-        String(accountId),
-        String(inboxId),
-        String(conversationId),
-        selectedEmps as any
-      );
+      const response = await fetch(WEBHOOK_LIST_ENTS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: originCanon,
+          account_id: accountId,
+          source: 'empreendimentos',
+          emp_ids: selectedEmpIds
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const users = Array.isArray(data) ? data : [];
       
       const newContacts: Contact[] = users.map((u: any) => ({
         id: uid(),
         name: u.name || 'Sem nome',
-        phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
+        phone: ensureE164(stripDigits(u.phone || u.telefone || ''), defaultCountryCode),
         tags: 'EMPREENDIMENTOS',
         srcEmp: true
       }));
@@ -1566,7 +1614,7 @@ const Index = () => {
                       <option value="">Selecione um perfil</option>
                       {profiles.map((p) => (
                         <option key={p.Id} value={p.Id}>
-                          {p.connection_status === 'open' ? '🟢 ' : p.connection_status === 'close' ? '🔴 ' : '🟡 '}{p.name}
+                          {p.name}
                         </option>
                       ))}
                     </select>
@@ -1601,14 +1649,12 @@ const Index = () => {
                   >
                     Grupos
                   </SmallBtn>
-                  {hasCvAccess && (
-                    <SmallBtn
-                      onClick={() => setListMode('empreendimentos')}
-                      variant={listMode === 'empreendimentos' ? 'primary' : 'secondary'}
-                    >
-                      Empreendimentos
-                    </SmallBtn>
-                  )}
+                  <SmallBtn
+                    onClick={() => setListMode('empreendimentos')}
+                    variant={listMode === 'empreendimentos' ? 'primary' : 'secondary'}
+                  >
+                    Empreendimentos
+                  </SmallBtn>
                   <SmallBtn
                     onClick={() => setListMode('importar')}
                     variant={listMode === 'importar' ? 'primary' : 'secondary'}
