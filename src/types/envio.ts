@@ -96,14 +96,14 @@ export interface QueueRecord {
 }
 
 export interface TenantConfig {
-  id: string;
+  id: string | number;
   chatwoot_origin: string;
-  account_id: string;
+  account_id: string | number;
   is_active: boolean;
-  cv_activa: boolean;
-  cv_active?: boolean;
+  cv_active: boolean;
   admin_apikey: string;
   cv_email: string;
   cv_apikey: string;
+  cv_url: string;
   default: boolean;
 }
