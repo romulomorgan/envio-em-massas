@@ -48,6 +48,7 @@ import {
   NOCO_TABLE_PROFILES_ID,
   NOCO_TENANT_TABLE_ID,
   NOCO_TENANT_VIEW_ID,
+  NOCO_EMPRESAS_TOKENS_TABLE_ID,
   NOCO_URL,
   NOCO_TOKEN,
   TABLE_SEND_QUEUE_ID,
@@ -149,6 +150,7 @@ const Index = () => {
   const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
   const [hasChatwootAccess, setHasChatwootAccess] = useState<boolean | null>(null);
   const [hasCvAccess, setHasCvAccess] = useState<boolean | null>(null);
+  const [empresasTokensData, setEmpresasTokensData] = useState<any>(null);
 
   // Perfis
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -253,6 +255,64 @@ const Index = () => {
   const pageSize = 10;
   const labelsReqRef = useRef<{ controller: AbortController | null }>({ controller: null });
 
+  // Buscar dados da tabela EMPRESAS_TOKENS
+  async function loadEmpresasTokens() {
+    if (!originCanon || !accountId) {
+      console.log('[empresasTokens] Aguardando originCanon e accountId...');
+      return null;
+    }
+
+    try {
+      console.log('[empresasTokens] Buscando na tabela EMPRESAS_TOKENS:', { originCanon, accountId });
+      
+      const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_EMPRESAS_TOKENS_TABLE_ID}/records?where=${encodeURIComponent(where)}&limit=25`;
+      
+      console.log('[empresasTokens] URL:', url);
+      
+      const data = await nocoGET(url);
+      const list = Array.isArray(data?.list) ? data.list : [];
+      
+      console.log('[empresasTokens] Resposta completa:', list);
+      
+      if (!list.length) {
+        console.log('[empresasTokens] ❌ Nenhum registro encontrado');
+        setEmpresasTokensData(null);
+        return null;
+      }
+      
+      const record = list[0];
+      const empresasData = {
+        cv_url: record.cv_url || '',
+        cv_email: record.cv_email || '',
+        cv_apikey: record.cv_apikey || '',
+        is_active: !!(record.is_active === true || record.is_active === 'true' || record.is_active === 1),
+        cv_active: !!(record.cv_active === true || record.cv_active === 'true' || record.cv_active === 1)
+      };
+      
+      console.log('[empresasTokens] ✅ Dados carregados:', {
+        cv_url: empresasData.cv_url ? '✅' : '❌',
+        cv_email: empresasData.cv_email ? '✅' : '❌',
+        cv_apikey: empresasData.cv_apikey ? '✅' : '❌',
+        is_active: empresasData.is_active,
+        cv_active: empresasData.cv_active
+      });
+      
+      setEmpresasTokensData(empresasData);
+      
+      // Atualiza hasCvAccess baseado no cv_active da tabela EMPRESAS_TOKENS
+      const cvAccess = empresasData.cv_active && empresasData.is_active;
+      console.log('[empresasTokens] hasCvAccess calculado:', cvAccess);
+      setHasCvAccess(cvAccess);
+      
+      return empresasData;
+    } catch (e) {
+      console.error('[empresasTokens] Erro:', e);
+      setEmpresasTokensData(null);
+      return null;
+    }
+  }
+
   // Carregar configuração do tenant (busca na tabela evo_profiles)
   async function loadTenantConfig() {
     if (!originCanon) {
@@ -333,7 +393,9 @@ const Index = () => {
 
       setTenantConfig(chosen);
       setHasChatwootAccess(!!(chosen.admin_apikey) && chosen.is_active === true);
-      setHasCvAccess(chosen.cv_activa || chosen.cv_active);
+      
+      // Não define hasCvAccess aqui, será definido após carregar empresasTokens
+      // setHasCvAccess(chosen.cv_activa || chosen.cv_active);
 
       // Expor variáveis globais
       if (typeof window !== 'undefined') {
@@ -348,6 +410,11 @@ const Index = () => {
           __INBOX_ID__: inboxId,
           __CONVERSATION_ID__: conversationId
         });
+      }
+
+      // Carrega dados da tabela EMPRESAS_TOKENS após carregar tenantConfig
+      if (accountId) {
+        await loadEmpresasTokens();
       }
 
       return chosen;
@@ -669,18 +736,26 @@ const Index = () => {
       const rows: any[] = XLSX.utils.sheet_to_json(ws);
       
       const imported: Contact[] = [];
+      const duplicates = new Set<string>();
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      
       for (const row of rows) {
         const name = String(row['Nome'] || row['nome'] || row['Name'] || row['name'] || '').trim();
         const phoneRaw = String(row['Telefone'] || row['telefone'] || row['Phone'] || row['phone'] || '').trim();
         const tagsRaw = String(row['Tags'] || row['tags'] || row['Etiquetas'] || row['etiquetas'] || '').trim();
         
         if (phoneRaw) {
-          // Limpa caracteres especiais e normaliza para E.164
           const digits = stripDigits(phoneRaw);
-          if (!digits) continue; // Pula se não tiver dígitos
+          if (!digits) continue;
+          
+          // Verifica duplicação
+          if (existingPhones.has(digits)) {
+            duplicates.add(digits);
+            continue;
+          }
           
           const phone = ensureE164(digits, defaultCountryCode);
-          if (!phone) continue; // Pula se normalização falhar
+          if (!phone) continue;
           
           imported.push({
             id: uid(),
@@ -689,18 +764,25 @@ const Index = () => {
             tags: tagsRaw || 'IMPORTADOS',
             srcImported: true
           });
+          
+          existingPhones.add(digits);
         }
       }
       
       if (imported.length === 0) {
-        setStatus('⚠️ Nenhum contato válido encontrado no arquivo.');
+        setStatus(duplicates.size > 0 
+          ? `⚠️ Nenhum contato novo. ${duplicates.size} duplicado(s) ignorado(s).`
+          : '⚠️ Nenhum contato válido encontrado no arquivo.'
+        );
         return;
       }
       
       setContacts(prev => [...prev, ...imported]);
-      // Seleciona automaticamente todos os contatos importados
       setSelectedContacts(prev => [...prev, ...imported.map(c => c.id)]);
-      setStatus(`✅ Importados ${imported.length} contatos do arquivo.`);
+      setStatus(duplicates.size > 0
+        ? `✅ Importados ${imported.length} contato(s). ${duplicates.size} duplicado(s) ignorado(s).`
+        : `✅ Importados ${imported.length} contato(s).`
+      );
     } catch (e: any) {
       setStatus(`❌ Erro ao importar: ${e.message}`);
     }
@@ -769,23 +851,46 @@ const Index = () => {
         originCanon,
         accountId,
         selectedProfile.inbox_id?.toString() || '',
-        '', // conversationId não é obrigatório
+        '',
         selectedLabels
       );
       
       console.log('[loadFromLabels] Usuários recebidos:', users);
       
-      const newContacts: Contact[] = users.map((u: any) => ({
-        id: uid(),
-        name: u.name || 'Sem nome',
-        phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
-        tags: selectedLabels.map(l => l.title).join(', '),
-        srcLabel: true
-      }));
+      const duplicates = new Set<string>();
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      
+      const newContacts: Contact[] = users
+        .map((u: any) => {
+          const digits = stripDigits(u.phone || '');
+          if (!digits) return null;
+          
+          if (existingPhones.has(digits)) {
+            duplicates.add(digits);
+            return null;
+          }
+          
+          const phone = ensureE164(digits, defaultCountryCode);
+          if (!phone) return null;
+          
+          existingPhones.add(digits);
+          
+          return {
+            id: uid(),
+            name: u.name || 'Sem nome',
+            phone,
+            tags: selectedLabels.map(l => l.title).join(', '),
+            srcLabel: true
+          };
+        })
+        .filter((c) => c !== null) as Contact[];
       
       setContacts(prev => [...prev, ...newContacts]);
       setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`✅ ${newContacts.length} contatos carregados das etiquetas.`);
+      setStatus(duplicates.size > 0
+        ? `✅ ${newContacts.length} contato(s) carregado(s). ${duplicates.size} duplicado(s) ignorado(s).`
+        : `✅ ${newContacts.length} contato(s) carregado(s).`
+      );
     } catch (e: any) {
       console.error('[loadFromLabels] Erro:', e);
       setStatus(`❌ Erro ao carregar contatos: ${e.message}`);
@@ -866,17 +971,40 @@ const Index = () => {
         return;
       }
       
-      const newContacts: Contact[] = users.map((u: any) => ({
-        id: uid(),
-        name: u.name || 'Sem nome',
-        phone: ensureE164(stripDigits(u.phone || ''), defaultCountryCode),
-        tags: selectedGroups.map(g => g.name).join(', '),
-        srcGroup: true
-      }));
+      const duplicates = new Set<string>();
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      
+      const newContacts: Contact[] = users
+        .map((u: any) => {
+          const digits = stripDigits(u.phone || '');
+          if (!digits) return null;
+          
+          if (existingPhones.has(digits)) {
+            duplicates.add(digits);
+            return null;
+          }
+          
+          const phone = ensureE164(digits, defaultCountryCode);
+          if (!phone) return null;
+          
+          existingPhones.add(digits);
+          
+          return {
+            id: uid(),
+            name: u.name || 'Sem nome',
+            phone,
+            tags: selectedGroups.map(g => g.name).join(', '),
+            srcGroup: true
+          };
+        })
+        .filter((c) => c !== null) as Contact[];
       
       setContacts(prev => [...prev, ...newContacts]);
       setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`✅ ${newContacts.length} participantes carregados dos grupos.`);
+      setStatus(duplicates.size > 0
+        ? `✅ ${newContacts.length} participante(s) carregado(s). ${duplicates.size} duplicado(s) ignorado(s).`
+        : `✅ ${newContacts.length} participante(s) carregado(s).`
+      );
     } catch (e: any) {
       console.error('[loadFromGroups] Erro:', e);
       setStatus(`❌ Erro ao carregar participantes: ${e.message}`);
@@ -886,14 +1014,32 @@ const Index = () => {
   }
 
   async function loadEmpreendimentos() {
-    if (!hasCvAccess || empsBusy) return;
+    if (!hasCvAccess || empsBusy) {
+      console.log('[loadEmpreendimentos] Aguardando acesso CV ou já carregando...', { hasCvAccess, empsBusy });
+      return;
+    }
+    
+    if (!empresasTokensData || !empresasTokensData.cv_url || !empresasTokensData.cv_email || !empresasTokensData.cv_apikey) {
+      console.log('[loadEmpreendimentos] ❌ Dados de EMPRESAS_TOKENS não disponíveis:', empresasTokensData);
+      setStatus('❌ Credenciais CV não encontradas. Verifique a tabela EMPRESAS_TOKENS.');
+      return;
+    }
+    
     setEmpsBusy(true);
     setStatus('Carregando empreendimentos...');
     
     try {
-      console.log('[loadEmpreendimentos] Carregando lista de empreendimentos...');
+      console.log('[loadEmpreendimentos] Carregando com credenciais:', {
+        cv_url: empresasTokensData.cv_url,
+        cv_email: empresasTokensData.cv_email,
+        cv_apikey: empresasTokensData.cv_apikey ? '✅' : '❌'
+      });
       
-      const list = await fetchEmpreendimentos();
+      const list = await fetchEmpreendimentos(
+        empresasTokensData.cv_url,
+        empresasTokensData.cv_email,
+        empresasTokensData.cv_apikey
+      );
       
       console.log('[loadEmpreendimentos] Empreendimentos recebidos:', list);
       
@@ -927,7 +1073,6 @@ const Index = () => {
     setStatus('Carregando contatos dos empreendimentos...');
     
     try {
-      // Formata os empreendimentos selecionados com id + nome (como no arquivo original)
       const selectedEmps = empreendimentos
         .filter(e => selectedEmpIds.includes(e.id))
         .map(e => ({
@@ -953,24 +1098,40 @@ const Index = () => {
       
       console.log('[loadFromEmps] Usuários recebidos:', users);
       
-      // Normaliza e valida os números de telefone
-      const newContacts: Contact[] = users.map((u: any) => {
-        const phoneRaw = u.phone || '';
-        const digits = stripDigits(phoneRaw);
-        const phone = ensureE164(digits, defaultCountryCode);
-        
-        return {
-          id: uid(),
-          name: u.name || 'Sem nome',
-          phone,
-          tags: selectedEmps.map(e => e.nome).join(', '),
-          srcEmp: true
-        };
-      }).filter(c => c.phone); // Remove contatos sem telefone válido
+      const duplicates = new Set<string>();
+      const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
+      
+      const newContacts: Contact[] = users
+        .map((u: any) => {
+          const digits = stripDigits(u.phone || '');
+          if (!digits) return null;
+          
+          if (existingPhones.has(digits)) {
+            duplicates.add(digits);
+            return null;
+          }
+          
+          const phone = ensureE164(digits, defaultCountryCode);
+          if (!phone) return null;
+          
+          existingPhones.add(digits);
+          
+          return {
+            id: uid(),
+            name: u.name || 'Sem nome',
+            phone,
+            tags: selectedEmps.map(e => e.nome).join(', '),
+            srcEmp: true
+          };
+        })
+        .filter((c) => c !== null) as Contact[];
       
       setContacts(prev => [...prev, ...newContacts]);
       setSelectedContacts(prev => [...prev, ...newContacts.map(c => c.id)]);
-      setStatus(`✅ ${newContacts.length} contatos carregados dos empreendimentos.`);
+      setStatus(duplicates.size > 0
+        ? `✅ ${newContacts.length} contato(s) carregado(s). ${duplicates.size} duplicado(s) ignorado(s).`
+        : `✅ ${newContacts.length} contato(s) carregado(s).`
+      );
     } catch (e: any) {
       console.error('[loadFromEmps] Erro:', e);
       setStatus(`❌ Erro ao carregar contatos: ${e.message}`);

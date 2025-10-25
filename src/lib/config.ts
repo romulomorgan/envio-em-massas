@@ -18,3 +18,6 @@ export const WEBHOOK_LIST_GROUP_PARTICIPANTS = "https://web.iadmin.ai/webhook/li
 
 export const NOCO_TENANT_TABLE_ID = 'mv4m28s2v1bs0me';
 export const NOCO_TENANT_VIEW_ID = 'vwvmrsd2sbbilhfq';
+
+// Tabela EMPRESAS_TOKENS para credenciais CV
+export const NOCO_EMPRESAS_TOKENS_TABLE_ID = 'mv4m28s2v1bs0me';

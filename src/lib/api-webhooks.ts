@@ -4,10 +4,7 @@ import {
   WEBHOOK_LIST_USERS, 
   WEBHOOK_LIST_GROUPS,
   WEBHOOK_LIST_GROUP_PARTICIPANTS,
-  WEBHOOK_LIST_ENTS,
-  CV_API_URL,
-  CV_API_EMAIL,
-  CV_API_TOKEN
+  WEBHOOK_LIST_ENTS
 } from './utils-envio';
 
 // Carregar etiquetas do Chatwoot
@@ -157,15 +154,15 @@ export async function fetchGroupParticipants(
   }).filter((x: any) => x.phone && (!own || digits(x.phone) !== own));
 }
 
-// Carregar empreendimentos
-export async function fetchEmpreendimentos() {
+// Carregar empreendimentos com credenciais personalizadas
+export async function fetchEmpreendimentos(cvUrl: string, cvEmail: string, cvApikey: string) {
   const headers = {
     accept: 'application/json',
-    email: CV_API_EMAIL,
-    token: CV_API_TOKEN
+    email: cvEmail,
+    token: cvApikey
   };
   
-  const response = await fetch(CV_API_URL, {
+  const response = await fetch(cvUrl, {
     method: 'GET',
     headers,
     mode: 'cors'
