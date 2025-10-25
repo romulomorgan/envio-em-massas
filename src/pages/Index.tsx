@@ -512,8 +512,8 @@ const Index = () => {
   }, []);
 
   async function loadProfiles() {
-    if (!originCanon) {
-      console.log('[Perfis] Aguardando originCanon...', { originCanon });
+    if (!originCanon || !accountId) {
+      console.log('[Perfis] Aguardando originCanon + accountId...', { originCanon, accountId });
       return;
     }
     
@@ -521,24 +521,13 @@ const Index = () => {
     setProfilesError('');
     
     try {
-      const baseWhere = `(chatwoot_origin,eq,${originCanon})`;
-      const whereWithAcc = accountId ? `${baseWhere}~and(account_id,eq,${accountId})` : baseWhere;
-
-      async function fetchByWhere(whereStr: string) {
-        const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?where=${encodeURIComponent(whereStr)}&limit=1000`;
-        console.log('[Perfis] Consultando NocoDB:', { originCanon, accountId, url });
-        const data = await nocoGET(url);
-        return Array.isArray(data?.list) ? data.list : [];
-      }
-
-      // Primeira tentativa (com accountId quando existir)
-      let list = await fetchByWhere(whereWithAcc);
-
-      // Fallback: se vazio e tínhamos accountId, tenta somente por origem
-      if ((!list || list.length === 0) && accountId) {
-        console.warn('[Perfis] Nenhum perfil com accountId; tentando somente por origem...');
-        list = await fetchByWhere(baseWhere);
-      }
+      const where = `(chatwoot_origin,eq,${originCanon})~and(account_id,eq,${accountId})`;
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?where=${encodeURIComponent(where)}&limit=1000`;
+      
+      console.log('[Perfis] Consultando NocoDB (origem + accountId):', { originCanon, accountId, url });
+      
+      const data = await nocoGET(url);
+      const list = Array.isArray(data?.list) ? data.list : [];
       
       console.log('[Perfis] Resposta NocoDB completa:', list);
       
@@ -592,12 +581,15 @@ const Index = () => {
       });
       
       setProfiles(sortedProfiles);
-      setStatus(`${sortedProfiles.length} perfil(is) carregado(s).`);
+      setStatus(`${list.length} perfil(is) carregado(s).`);
       
-      // Auto-seleciona o primeiro perfil (que será o default se existir)
-      if (sortedProfiles.length > 0 && !selectedProfileId) {
+      // Mantém seleção se ainda existir; senão, auto-seleciona o default/primeiro
+      const stillExists = selectedProfileId
+        ? sortedProfiles.some(p => String(p.Id) === String(selectedProfileId))
+        : false;
+      if (!stillExists && sortedProfiles.length > 0) {
         setSelectedProfileId(String(sortedProfiles[0].Id));
-        console.log('[Perfis] Auto-selecionado:', sortedProfiles[0]);
+        console.log('[Perfis] Auto-selecionado (default/primeiro):', sortedProfiles[0]);
       }
       
     } catch (err: any) {
@@ -610,10 +602,10 @@ const Index = () => {
   }
 
   useEffect(() => {
-    if (originCanon) {
+    if (accountId && originCanon) {
       loadProfiles();
     }
-  }, [originCanon, accountId]);
+  }, [accountId, originCanon]);
 
   // ========== FUNÇÕES DE CONTATOS ==========
   
