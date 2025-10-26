@@ -2651,15 +2651,15 @@ const Index = () => {
             <div className="space-y-6">
               <SectionTitle>Campanhas</SectionTitle>
               <div className="flex items-center justify-end gap-2">
+                <SmallBtn onClick={loadMonitor} disabled={monitorBusy}>
+                  {monitorBusy ? 'Carregando...' : 'Atualizar'}
+                </SmallBtn>
                 <Button
                   variant="default"
                   onClick={() => setTab('direct')}
                 >
                   Criar Campanha
                 </Button>
-                <SmallBtn onClick={loadMonitor} disabled={monitorBusy}>
-                  {monitorBusy ? 'Carregando...' : 'Atualizar'}
-                </SmallBtn>
               </div>
 
               <div className="border border-border rounded-lg overflow-hidden">
@@ -2716,10 +2716,10 @@ const Index = () => {
                                     style={{ width: `${progress}%` }}
                                   />
                                 </div>
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                  {q.progress_contact_ix || 0}/{q.contacts_count || 0}
-                                </span>
                               </div>
+                            </td>
+                            <td className="px-4 py-2 text-sm text-muted-foreground whitespace-nowrap">
+                              {q.progress_contact_ix || 0}/{q.contacts_count || 0}
                             </td>
                             <td className="px-4 py-2">
                               <div className="flex gap-1 items-center">
@@ -2799,7 +2799,7 @@ const Index = () => {
                       })}
                       {!queueRows.length && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                          <td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">
                             Nenhuma campanha encontrada
                           </td>
                         </tr>
