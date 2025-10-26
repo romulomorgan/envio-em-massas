@@ -146,6 +146,26 @@ const Index = () => {
   const [status, setStatus] = useState('');
   const [listMode, setListMode] = useState('usuarios');
 
+  // Debug
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<Array<{ id: string; ts: string; scope: string; message: string; data?: any }>>([]);
+  const mask = (v?: string, keep: number = 4) => {
+    const s = String(v || '');
+    return s ? `${s.slice(0, 3)}***${s.slice(-keep)}` : '';
+  };
+  const addDebug = (scope: string, message: string, data?: any) => {
+    const ev = { id: uid(), ts: new Date().toISOString(), scope, message, data };
+    setDebugLogs(prev => [ev, ...prev].slice(0, 200));
+    try { console.log(`[debug:${scope}] ${message}`, data ?? ''); } catch {}
+  };
+  const copyDebug = () => {
+    try {
+      const blob = JSON.stringify(debugLogs, null, 2);
+      navigator.clipboard?.writeText(blob);
+      setStatus('Logs copiados para a área de transferência.');
+    } catch {}
+  };
+
   // Tenant config
   const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
   const [hasChatwootAccess, setHasChatwootAccess] = useState<boolean | null>(null);
@@ -264,19 +284,23 @@ const Index = () => {
 
     try {
       console.log('[empresasTokens] Buscando na tabela EMPRESAS_TOKENS:', { originCanon, accountId });
+      addDebug('emp_tokens', 'GET EMPRESAS_TOKENS', { originCanon, accountId });
       
       const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
       const url = `${NOCO_URL}/api/v2/tables/${NOCO_EMPRESAS_TOKENS_TABLE_ID}/records?where=${encodeURIComponent(where)}&limit=25`;
       
       console.log('[empresasTokens] URL:', url);
+      addDebug('emp_tokens', 'GET URL', { url });
       
       const data = await nocoGET(url);
       const list = Array.isArray(data?.list) ? data.list : [];
       
       console.log('[empresasTokens] Resposta completa:', list);
+      addDebug('emp_tokens', 'Resposta EMPRESAS_TOKENS', { count: list.length, sample: list.slice(0, 2) });
       
       if (!list.length) {
         console.log('[empresasTokens] ❌ Nenhum registro encontrado');
+        addDebug('emp_tokens', 'Nenhum registro encontrado');
         setEmpresasTokensData(null);
         return null;
       }
@@ -297,17 +321,26 @@ const Index = () => {
         is_active: empresasData.is_active,
         cv_active: empresasData.cv_active
       });
+      addDebug('emp_tokens', 'Credenciais CV', {
+        cv_url: empresasData.cv_url,
+        cv_email: empresasData.cv_email ? '✅' : '❌',
+        cv_apikey: mask(empresasData.cv_apikey),
+        is_active: empresasData.is_active,
+        cv_active: empresasData.cv_active
+      });
       
       setEmpresasTokensData(empresasData);
       
       // Atualiza hasCvAccess baseado no cv_active da tabela EMPRESAS_TOKENS
       const cvAccess = empresasData.cv_active && empresasData.is_active;
       console.log('[empresasTokens] hasCvAccess calculado:', cvAccess);
+      addDebug('emp_tokens', 'hasCvAccess calculado', { hasCvAccess: cvAccess });
       setHasCvAccess(cvAccess);
       
       return empresasData;
     } catch (e) {
       console.error('[empresasTokens] Erro:', e);
+      addDebug('emp_tokens', 'Erro ao buscar EMPRESAS_TOKENS', { error: String(e) });
       setEmpresasTokensData(null);
       return null;
     }
@@ -322,6 +355,7 @@ const Index = () => {
 
     try {
       console.log('[tenantConfig] Buscando perfil na evo_profiles:', { originCanon, accountId });
+      addDebug('tenant', 'Query evo_profiles', { originCanon, accountId });
       const baseUrl = NOCO_URL;
       let data: any = null;
 
@@ -330,8 +364,10 @@ const Index = () => {
         const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
         const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
         console.log('[tenantConfig] URL com account_id (evo_profiles):', url);
+        addDebug('tenant', 'GET evo_profiles (with account_id)', { url });
         data = await nocoGET(url).catch((err) => {
           console.error('[tenantConfig] Erro na busca com account_id:', err);
+          addDebug('tenant', 'Erro na busca com account_id', { error: String(err) });
           return null;
         });
       }
@@ -341,8 +377,10 @@ const Index = () => {
         const where = `(chatwoot_origin,eq,${originCanon})`;
         const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
         console.log('[tenantConfig] URL sem account_id (evo_profiles):', url);
+        addDebug('tenant', 'GET evo_profiles (by origin only)', { url });
         data = await nocoGET(url).catch((err) => {
           console.error('[tenantConfig] Erro na busca sem account_id:', err);
+          addDebug('tenant', 'Erro na busca sem account_id', { error: String(err) });
           return null;
         });
       }
@@ -384,6 +422,10 @@ const Index = () => {
 
       const chosen = filtered.find((x: any) => x.default) || filtered[0];
       console.log('[tenantConfig] ✅ Tenant escolhido:', chosen);
+      addDebug('tenant', 'Tenant escolhido', {
+        ...chosen,
+        admin_apikey: mask(chosen?.admin_apikey)
+      });
 
       // Atualiza accountId se não estava definido
       if (!accountId && chosen && chosen.account_id) {
@@ -433,6 +475,15 @@ const Index = () => {
     }
   }, [originCanon, accountId]);
 
+  // Debug inicial
+  useEffect(() => {
+    addDebug('init', 'Context detected on load', {
+      originCanon,
+      referrer: refCtx?.href,
+      refChatwootOrigin: refCtx?.chatwootOrigin
+    });
+  }, [originCanon]);
+
   // Helper: extrai IDs do pathname do Chatwoot
   function extractIdsFromPath(pathname: string) {
     const acc = pathname.match(/\/accounts\/(\d+)(?:\/|$)/i)?.[1] || '';
@@ -450,6 +501,7 @@ const Index = () => {
       if (inbox) (window as any).__INBOX_ID__ = inbox;
       if (conv) (window as any).__CONVERSATION_ID__ = conv;
     }
+    addDebug('detect', 'IDs applied from URL', { accountId: acc, inboxId: inbox, conversationId: conv });
   }
 
   function parseAndApplyFromUrl(raw: string) {
@@ -1034,6 +1086,11 @@ const Index = () => {
         cv_email: empresasTokensData.cv_email,
         cv_apikey: empresasTokensData.cv_apikey ? '✅' : '❌'
       });
+      addDebug('emp', 'List empreendimentos request', {
+        url: empresasTokensData.cv_url,
+        email: empresasTokensData.cv_email,
+        token: mask(empresasTokensData.cv_apikey)
+      });
       
       const list = await fetchEmpreendimentos(
         empresasTokensData.cv_url,
@@ -1042,6 +1099,7 @@ const Index = () => {
       );
       
       console.log('[loadEmpreendimentos] Empreendimentos recebidos:', list);
+      addDebug('emp', 'List empreendimentos response', { count: list.length, sample: list.slice(0, 3) });
       
       setEmpreendimentos(list);
       setStatus(list.length > 0 
@@ -1050,6 +1108,7 @@ const Index = () => {
       );
     } catch (e: any) {
       console.error('[loadEmpreendimentos] Erro:', e);
+      addDebug('emp', 'Erro na listagem de empreendimentos', { error: String(e) });
       setStatus(`❌ Erro ao carregar empreendimentos: ${e.message}`);
       setEmpreendimentos([]);
     } finally {
@@ -1087,6 +1146,14 @@ const Index = () => {
         conversationId: conversationId || '',
         empreendimentos: selectedEmps
       });
+      addDebug('emp', 'Users by empreendimentos request', {
+        url: WEBHOOK_LIST_ENTS,
+        origin: originCanon,
+        accountId: accountId,
+        inboxId: selectedProfile.inbox_id?.toString() || '',
+        conversationId: conversationId || '',
+        empreendimentos: selectedEmps
+      });
       
       const users = await fetchUsersByEmpreendimentos(
         originCanon,
@@ -1097,6 +1164,7 @@ const Index = () => {
       );
       
       console.log('[loadFromEmps] Usuários recebidos:', users);
+      addDebug('emp', 'Users by empreendimentos response', { count: users.length, sample: users.slice(0, 3) });
       
       const duplicates = new Set<string>();
       const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
@@ -1134,6 +1202,7 @@ const Index = () => {
       );
     } catch (e: any) {
       console.error('[loadFromEmps] Erro:', e);
+      addDebug('emp', 'Erro ao carregar usuários por empreendimentos', { error: String(e) });
       setStatus(`❌ Erro ao carregar contatos: ${e.message}`);
     } finally {
       setEmpsBusy(false);
@@ -2765,7 +2834,51 @@ const Index = () => {
             </div>
           )}
 
-          <div className="mt-6 text-xs text-muted-foreground">{status}</div>
+      {/* Debug Panel */}
+      <div className="mt-6">
+        <button className="btn-ghost-custom text-sm" onClick={() => setDebugOpen(v => !v)}>
+          {debugOpen ? '▼' : '►'} Debug
+        </button>
+        {debugOpen && (
+          <div className="mt-2 space-y-3 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="p-2 rounded border border-border">
+                <div className="font-semibold mb-1">Detectado</div>
+                <div>originCanon: {originCanon || '(vazio)'}</div>
+                <div>accountId: {accountId || '(vazio)'}</div>
+                <div>inboxId: {inboxId || '(vazio)'}</div>
+                <div>conversationId: {conversationId || '(vazio)'}</div>
+              </div>
+              <div className="p-2 rounded border border-border">
+                <div className="font-semibold mb-1">Tenant/CV</div>
+                <div>hasChatwootAccess: {String(hasChatwootAccess)}</div>
+                <div>hasCvAccess: {String(hasCvAccess)}</div>
+                <div>admin_api_key: {mask(tenantConfig?.admin_apikey)}</div>
+                <div>cv_url: {empresasTokensData?.cv_url || '(vazio)'}</div>
+                <div>cv_email: {empresasTokensData?.cv_email ? '✅' : '❌'}</div>
+                <div>cv_apikey: {mask(empresasTokensData?.cv_apikey)}</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <SmallBtn onClick={copyDebug} variant="secondary">Copiar logs</SmallBtn>
+              <SmallBtn onClick={() => setDebugLogs([])} variant="secondary">Limpar</SmallBtn>
+            </div>
+            <div className="border border-border rounded p-2 max-h-64 overflow-auto bg-muted/30">
+              {debugLogs.map((l) => (
+                <div key={l.id} className="mb-2">
+                  <div className="font-mono">{l.ts} [{l.scope}] - {l.message}</div>
+                  {l.data && (
+                    <pre className="whitespace-pre-wrap break-all">{JSON.stringify(l.data, null, 2)}</pre>
+                  )}
+                </div>
+              ))}
+              {!debugLogs.length && <div className="text-muted-foreground">Sem eventos ainda.</div>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 text-xs text-muted-foreground">{status}</div>
         </div>
       </div>
       
