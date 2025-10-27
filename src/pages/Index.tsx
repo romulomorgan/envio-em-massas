@@ -537,8 +537,8 @@ const Index = () => {
     try {
       const currentUrl = window.location.href;
       const ref = typeof document !== 'undefined' ? document.referrer : '';
-      console.log('[URL Detection] Current URL:', currentUrl);
-      console.log('[URL Detection] Referrer (Chatwoot):', ref || '—');
+      
+      addDebug('init', 'URL Detection started', { currentUrl, referrer: ref || '(nenhum)' });
       
       const u = new URL(currentUrl);
       
@@ -548,17 +548,32 @@ const Index = () => {
       let inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
       let conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
 
+      if (acc || inbox || conv) {
+        addDebug('init', 'IDs from query string', { acc, inbox, conv });
+      }
+
       // 2) Hash local
       if ((!acc || !inbox || !conv) && u.hash) {
         const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
-        acc = acc || (hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '');
-        inbox = inbox || (hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '');
-        conv = conv || (hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '');
+        const hashAcc = hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
+        const hashInbox = hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
+        const hashConv = hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
+        
+        acc = acc || hashAcc;
+        inbox = inbox || hashInbox;
+        conv = conv || hashConv;
+        
+        if (hashAcc || hashInbox || hashConv) {
+          addDebug('init', 'IDs from hash', { acc: hashAcc, inbox: hashInbox, conv: hashConv });
+        }
       }
 
       // 3) Pathname local (quando app estiver sob o mesmo domínio)
       if ((!acc || !inbox || !conv) && u.pathname) {
         const idsLocal = extractIdsFromPath(u.pathname);
+        if (idsLocal.acc || idsLocal.inbox || idsLocal.conv) {
+          addDebug('init', 'IDs from local pathname', idsLocal);
+        }
         if (!acc && idsLocal.acc) acc = idsLocal.acc;
         if (!inbox && idsLocal.inbox) inbox = idsLocal.inbox;
         if (!conv && idsLocal.conv) conv = idsLocal.conv;
@@ -571,23 +586,35 @@ const Index = () => {
           const rPath = ru.pathname || '';
           if (rPath && rPath !== '/') {
             const idsRef = extractIdsFromPath(rPath);
+            if (idsRef.acc || idsRef.inbox || idsRef.conv) {
+              addDebug('init', 'IDs from referrer pathname', { pathname: rPath, ...idsRef });
+            }
             if (!acc && idsRef.acc) acc = idsRef.acc;
             if (!inbox && idsRef.inbox) inbox = idsRef.inbox;
             if (!conv && idsRef.conv) conv = idsRef.conv;
           }
         } catch (e) {
-          console.error('[URL Detection] Erro ao processar referrer:', e);
+          addDebug('init', 'Erro ao processar referrer', { error: String(e) });
         }
       }
 
-      console.log('[URL Detection] ✅ Valores finais:', { acc, inbox, conv });
+      addDebug('init', 'IDs detectados da URL (FINAIS)', { accountId: acc, inboxId: inbox, conversationId: conv });
       
-      if (acc) setAccountId(acc);
-      if (inbox) setInboxId(inbox);
-      if (conv) setConversationId(conv);
+      if (acc) {
+        setAccountId(acc);
+        if (typeof window !== 'undefined') (window as any).__ACCOUNT_ID__ = acc;
+      }
+      if (inbox) {
+        setInboxId(inbox);
+        if (typeof window !== 'undefined') (window as any).__INBOX_ID__ = inbox;
+      }
+      if (conv) {
+        setConversationId(conv);
+        if (typeof window !== 'undefined') (window as any).__CONVERSATION_ID__ = conv;
+      }
       
     } catch (e) {
-      console.error('[URL Detection] Erro geral:', e);
+      addDebug('init', 'Erro geral na detecção de URL', { error: String(e) });
     }
   }, []);
 
@@ -610,15 +637,49 @@ const Index = () => {
             const acc2 = toNumStr(conv.account_id || payload.account_id || payload.account?.id);
             const inbox2 = toNumStr(conv.inbox_id || payload.inbox_id);
             const conv2 = toNumStr(conv.display_id || conv.id || payload.conversation_id);
-            if (acc2) setAccountId(acc2);
-            if (inbox2) setInboxId(inbox2);
-            if (conv2) setConversationId(conv2);
-            if (typeof window !== 'undefined') {
-              (window as any).__ACCOUNT_ID__ = acc2 || (window as any).__ACCOUNT_ID__;
-              (window as any).__INBOX_ID__ = inbox2 || (window as any).__INBOX_ID__;
-              (window as any).__CONVERSATION_ID__ = conv2 || (window as any).__CONVERSATION_ID__;
+            
+            addDebug('postMessage', 'appContext recebido', { 
+              acc: acc2 || '(vazio)', 
+              inbox: inbox2 || '(vazio)', 
+              conv: conv2 || '(vazio)', 
+              payload: { 
+                conversation_id: conv.id, 
+                account_id: conv.account_id || payload.account_id 
+              } 
+            });
+            
+            // IMPORTANTE: Só sobrescreve se ainda não tiver valores detectados da URL
+            const currentAcc = (window as any).__ACCOUNT_ID__ || '';
+            const currentInbox = (window as any).__INBOX_ID__ || '';
+            const currentConv = (window as any).__CONVERSATION_ID__ || '';
+            
+            if (acc2 && !currentAcc) {
+              setAccountId(acc2);
+              if (typeof window !== 'undefined') (window as any).__ACCOUNT_ID__ = acc2;
+              addDebug('postMessage', 'accountId atualizado via appContext', { acc2 });
+            } else if (acc2 && currentAcc !== acc2) {
+              addDebug('postMessage', '⚠️ accountId do appContext DIFERENTE do detectado - mantendo o da URL', { 
+                urlValue: currentAcc, 
+                appContextValue: acc2 
+              });
             }
-            console.log('[postMessage] appContext recebido:', { acc2, inbox2, conv2, payload });
+            
+            if (inbox2 && !currentInbox) {
+              setInboxId(inbox2);
+              if (typeof window !== 'undefined') (window as any).__INBOX_ID__ = inbox2;
+              addDebug('postMessage', 'inboxId atualizado via appContext', { inbox2 });
+            }
+            
+            if (conv2 && !currentConv) {
+              setConversationId(conv2);
+              if (typeof window !== 'undefined') (window as any).__CONVERSATION_ID__ = conv2;
+              addDebug('postMessage', 'conversationId atualizado via appContext', { conv2 });
+            } else if (!conv2 && currentConv) {
+              addDebug('postMessage', '⚠️ appContext não tem conversationId - mantendo o da URL', { 
+                urlValue: currentConv 
+              });
+            }
+            
             return; // já tratou
           }
         }
@@ -630,10 +691,26 @@ const Index = () => {
             const u = new URL(maybeUrl);
             setParentPathInfo({ href: u.href, pathname: u.pathname });
             const ids = extractIdsFromPath(u.pathname);
-            if (ids.acc) setAccountId(ids.acc);
-            if (ids.inbox) setInboxId(ids.inbox);
-            if (ids.conv) setConversationId(ids.conv);
-            console.log('[postMessage] URL recebida do parent:', u.href, ids);
+            
+            addDebug('postMessage', 'URL completa recebida', { url: u.href, ...ids });
+            
+            // Só atualiza se não tiver valores ou se forem iguais
+            const currentAcc = (window as any).__ACCOUNT_ID__ || '';
+            const currentInbox = (window as any).__INBOX_ID__ || '';
+            const currentConv = (window as any).__CONVERSATION_ID__ || '';
+            
+            if (ids.acc && !currentAcc) {
+              setAccountId(ids.acc);
+              if (typeof window !== 'undefined') (window as any).__ACCOUNT_ID__ = ids.acc;
+            }
+            if (ids.inbox && !currentInbox) {
+              setInboxId(ids.inbox);
+              if (typeof window !== 'undefined') (window as any).__INBOX_ID__ = ids.inbox;
+            }
+            if (ids.conv && !currentConv) {
+              setConversationId(ids.conv);
+              if (typeof window !== 'undefined') (window as any).__CONVERSATION_ID__ = ids.conv;
+            }
           } catch {}
         }
 
@@ -646,16 +723,27 @@ const Index = () => {
         const acc = toNumStr((d as any).account_id || (d as any).accountId || (d as any).acc);
         const inbox = toNumStr((d as any).inbox_id || (d as any).inboxId || (d as any).inbox);
         const conv = toNumStr((d as any).conversation_id || (d as any).conversationId || (d as any).conv);
-        if (acc) setAccountId(acc);
-        if (inbox) setInboxId(inbox);
-        if (conv) setConversationId(conv);
-        if (typeof window !== 'undefined') {
-          (window as any).__ACCOUNT_ID__ = acc || (window as any).__ACCOUNT_ID__;
-          (window as any).__INBOX_ID__ = inbox || (window as any).__INBOX_ID__;
-          (window as any).__CONVERSATION_ID__ = conv || (window as any).__CONVERSATION_ID__;
-        }
+        
         if (acc || inbox || conv) {
-          console.log('[postMessage] IDs recebidos:', { acc, inbox, conv });
+          addDebug('postMessage', 'IDs soltos recebidos', { acc: acc || '(vazio)', inbox: inbox || '(vazio)', conv: conv || '(vazio)' });
+          
+          // Só atualiza se não tiver valores
+          const currentAcc = (window as any).__ACCOUNT_ID__ || '';
+          const currentInbox = (window as any).__INBOX_ID__ || '';
+          const currentConv = (window as any).__CONVERSATION_ID__ || '';
+          
+          if (acc && !currentAcc) {
+            setAccountId(acc);
+            if (typeof window !== 'undefined') (window as any).__ACCOUNT_ID__ = acc;
+          }
+          if (inbox && !currentInbox) {
+            setInboxId(inbox);
+            if (typeof window !== 'undefined') (window as any).__INBOX_ID__ = inbox;
+          }
+          if (conv && !currentConv) {
+            setConversationId(conv);
+            if (typeof window !== 'undefined') (window as any).__CONVERSATION_ID__ = conv;
+          }
         }
       } catch {}
     };
