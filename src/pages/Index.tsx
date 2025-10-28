@@ -306,6 +306,23 @@ const Index = () => {
       }
       
       const record = list[0];
+      
+      // DEBUG: Log completo do registro RAW da tabela
+      console.log('[empresasTokens] 📋 REGISTRO RAW da tabela EMPRESAS_TOKENS:', record);
+      console.log('[empresasTokens] 🔑 Campos disponíveis:', Object.keys(record));
+      console.log('[empresasTokens] 📊 Valores dos campos booleanos:', {
+        'cv_active (raw)': record.cv_active,
+        'cv_active (type)': typeof record.cv_active,
+        'is_active (raw)': record.is_active,
+        'is_active (type)': typeof record.is_active
+      });
+      addDebug('emp_tokens', 'Registro RAW completo', { 
+        record,
+        keys: Object.keys(record),
+        cv_active_raw: record.cv_active,
+        is_active_raw: record.is_active
+      });
+      
       const empresasData = {
         cv_url: record.cv_url || '',
         cv_email: record.cv_email || '',
@@ -314,12 +331,12 @@ const Index = () => {
         cv_active: !!(record.cv_active === true || record.cv_active === 'true' || record.cv_active === 1)
       };
       
-      console.log('[empresasTokens] ✅ Dados carregados:', {
-        cv_url: empresasData.cv_url ? '✅' : '❌',
-        cv_email: empresasData.cv_email ? '✅' : '❌',
-        cv_apikey: empresasData.cv_apikey ? '✅' : '❌',
-        is_active: empresasData.is_active,
-        cv_active: empresasData.cv_active
+      console.log('[empresasTokens] ✅ Dados convertidos:', {
+        cv_url: empresasData.cv_url ? '✅ presente' : '❌ vazio',
+        cv_email: empresasData.cv_email ? '✅ presente' : '❌ vazio',
+        cv_apikey: empresasData.cv_apikey ? `✅ ${empresasData.cv_apikey.slice(0, 5)}***` : '❌ vazio',
+        'is_active (convertido)': empresasData.is_active,
+        'cv_active (convertido)': empresasData.cv_active
       });
       addDebug('emp_tokens', 'Credenciais CV', {
         cv_url: empresasData.cv_url,
@@ -333,8 +350,17 @@ const Index = () => {
       
       // Atualiza hasCvAccess baseado no cv_active da tabela EMPRESAS_TOKENS
       const cvAccess = empresasData.cv_active && empresasData.is_active;
-      console.log('[empresasTokens] hasCvAccess calculado:', cvAccess);
-      addDebug('emp_tokens', 'hasCvAccess calculado', { hasCvAccess: cvAccess });
+      console.log('[empresasTokens] 🎯 CÁLCULO hasCvAccess:', {
+        'cv_active': empresasData.cv_active,
+        'is_active': empresasData.is_active,
+        'cv_active && is_active': cvAccess,
+        '⚠️ ATENÇÃO': cvAccess ? '✅ Empreendimentos LIBERADOS' : '❌ Empreendimentos BLOQUEADOS - Verifique cv_active e is_active na tabela!'
+      });
+      addDebug('emp_tokens', 'hasCvAccess calculado', { 
+        cv_active: empresasData.cv_active,
+        is_active: empresasData.is_active,
+        hasCvAccess: cvAccess 
+      });
       setHasCvAccess(cvAccess);
       
       return empresasData;
