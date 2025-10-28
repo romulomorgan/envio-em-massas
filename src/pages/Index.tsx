@@ -1720,6 +1720,18 @@ const Index = () => {
         return;
       }
       
+      // Debug: Mostrar estrutura dos primeiros 2 logs
+      console.log('[handleDownloadExcel] Total de logs:', logs.length);
+      console.log('[handleDownloadExcel] Estrutura do primeiro log:', JSON.stringify(logs[0], null, 2));
+      if (logs.length > 1) {
+        console.log('[handleDownloadExcel] Estrutura do segundo log:', JSON.stringify(logs[1], null, 2));
+      }
+      addDebug('excel', 'Estrutura dos logs', { 
+        total: logs.length, 
+        firstLog: logs[0],
+        secondLog: logs[1] || null
+      });
+      
       // Contar sucessos e falhas
       const totalLogs = logs.length;
       const sucessos = logs.filter((log: any) => 
@@ -1728,11 +1740,27 @@ const Index = () => {
       const falhas = totalLogs - sucessos;
       
       // Preparar dados para Excel com Numero, Status e Motivo
-      const excelData = logs.map((log: any) => {
+      const excelData = logs.map((log: any, index: number) => {
         const numero = extractNumberFromLog(log);
         const isSuccess = log.level === 'success' || log.level === 'info' || log.http_status === 200 || log.http_status === 201;
         const status = isSuccess ? 'Sucesso' : 'Falha';
         const motivo = !isSuccess ? extractReasonFromLog(log) : '';
+        
+        // Debug para os primeiros 3 registros
+        if (index < 3) {
+          console.log(`[handleDownloadExcel] Log #${index + 1}:`, {
+            numero_extraido: numero,
+            status: status,
+            motivo: motivo,
+            log_completo: log
+          });
+          addDebug('excel', `Dados extraídos do log #${index + 1}`, {
+            numero: numero,
+            status: status,
+            motivo: motivo,
+            campos_disponiveis: Object.keys(log)
+          });
+        }
         
         return {
           Numero: numero ? formatPhoneLocal(numero) : '-',
