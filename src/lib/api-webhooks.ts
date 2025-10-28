@@ -156,74 +156,120 @@ export async function fetchGroupParticipants(
 
 // Carregar empreendimentos com credenciais personalizadas
 export async function fetchEmpreendimentos(cvUrl: string, cvEmail: string, cvApikey: string) {
+  console.log('[fetchEmpreendimentos] Iniciando requisição...', {
+    cvUrl,
+    cvEmail,
+    cvApikey: cvApikey ? '✅ presente' : '❌ ausente'
+  });
+  
   const headers = {
     accept: 'application/json',
     email: cvEmail,
     token: cvApikey
   };
   
-  const response = await fetch(cvUrl, {
-    method: 'GET',
-    headers,
-    mode: 'cors'
+  console.log('[fetchEmpreendimentos] Headers preparados:', {
+    accept: headers.accept,
+    email: headers.email,
+    token: headers.token ? `${headers.token.slice(0, 5)}***` : '❌'
   });
   
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  
-  let arr: any[] = [];
-  if (Array.isArray(data)) {
-    arr = data;
-  } else if (data && typeof data === 'object') {
-    const keys = ['items', 'data', 'results', 'result', 'content', 'rows', 'list', 'records', 'empreendimentos'];
-    for (const k of keys) {
-      if (Array.isArray(data?.[k])) {
-        arr = data[k];
-        break;
-      }
+  try {
+    console.log('[fetchEmpreendimentos] Fazendo fetch para:', cvUrl);
+    const response = await fetch(cvUrl, {
+      method: 'GET',
+      headers,
+      mode: 'cors'
+    });
+    
+    console.log('[fetchEmpreendimentos] Resposta recebida:', {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[fetchEmpreendimentos] Erro HTTP:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText
+      });
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
-    if (!arr.length) {
-      for (const v of Object.values(data)) {
-        if (Array.isArray(v)) {
-          arr = v as any[];
+    
+    const data = await response.json();
+    console.log('[fetchEmpreendimentos] Dados parseados:', {
+      type: typeof data,
+      isArray: Array.isArray(data),
+      keys: typeof data === 'object' && data !== null ? Object.keys(data) : [],
+      sample: Array.isArray(data) ? data.slice(0, 2) : data
+    });
+    
+    let arr: any[] = [];
+    if (Array.isArray(data)) {
+      arr = data;
+    } else if (data && typeof data === 'object') {
+      const keys = ['items', 'data', 'results', 'result', 'content', 'rows', 'list', 'records', 'empreendimentos'];
+      for (const k of keys) {
+        if (Array.isArray(data?.[k])) {
+          console.log(`[fetchEmpreendimentos] Array encontrado em data.${k}`);
+          arr = data[k];
           break;
         }
       }
+      if (!arr.length) {
+        for (const v of Object.values(data)) {
+          if (Array.isArray(v)) {
+            console.log('[fetchEmpreendimentos] Array encontrado em Object.values');
+            arr = v as any[];
+            break;
+          }
+        }
+      }
     }
+    
+    console.log('[fetchEmpreendimentos] Array extraído:', { length: arr.length, sample: arr.slice(0, 3) });
+    
+    const mapped = arr.map((raw: any, idx: number) => {
+      if (typeof raw === 'string') {
+        const name = raw.trim();
+        return name ? { id: String(idx + 1), name, title: name } : null;
+      }
+      
+      const idKeys = ['idEmpreendimento', 'id_empreendimento', 'codigoEmpreendimento', 'codigo', 'id'];
+      const nameKeys = ['nome', 'name', 'title', 'empreendimento', 'nomeEmpreendimento'];
+      
+      let idCandidate: any = null;
+      let nameCandidate: any = null;
+      
+      if (typeof raw === 'object') {
+        for (const k of idKeys) {
+          if (raw[k] != null && raw[k] !== '') {
+            idCandidate = raw[k];
+            break;
+          }
+        }
+        for (const k of nameKeys) {
+          if (raw[k] != null && String(raw[k]).trim() !== '') {
+            nameCandidate = raw[k];
+            break;
+          }
+        }
+      }
+      
+      const id = String(idCandidate ?? (idx + 1));
+      const name = String(nameCandidate ?? '').trim();
+      
+      return name ? { id, name, title: name } : null;
+    }).filter(Boolean);
+    
+    console.log('[fetchEmpreendimentos] Resultado final:', { count: mapped.length, items: mapped });
+    return mapped;
+  } catch (e: any) {
+    console.error('[fetchEmpreendimentos] Erro capturado:', e);
+    throw e;
   }
-  
-  return arr.map((raw: any, idx: number) => {
-    if (typeof raw === 'string') {
-      const name = raw.trim();
-      return name ? { id: String(idx + 1), name, title: name } : null;
-    }
-    
-    const idKeys = ['idEmpreendimento', 'id_empreendimento', 'codigoEmpreendimento', 'codigo', 'id'];
-    const nameKeys = ['nome', 'name', 'title', 'empreendimento', 'nomeEmpreendimento'];
-    
-    let idCandidate: any = null;
-    let nameCandidate: any = null;
-    
-    if (typeof raw === 'object') {
-      for (const k of idKeys) {
-        if (raw[k] != null && raw[k] !== '') {
-          idCandidate = raw[k];
-          break;
-        }
-      }
-      for (const k of nameKeys) {
-        if (raw[k] != null && String(raw[k]).trim() !== '') {
-          nameCandidate = raw[k];
-          break;
-        }
-      }
-    }
-    
-    const id = String(idCandidate ?? (idx + 1));
-    const name = String(nameCandidate ?? '').trim();
-    
-    return name ? { id, name, title: name } : null;
-  }).filter(Boolean);
 }
 
 // Carregar usuários por empreendimentos
@@ -243,20 +289,56 @@ export async function fetchUsersByEmpreendimentos(
     empreendimentos
   };
   
-  const response = await fetch(WEBHOOK_LIST_ENTS, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+  console.log('[fetchUsersByEmpreendimentos] Iniciando requisição...', {
+    url: WEBHOOK_LIST_ENTS,
+    payload
   });
   
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  const arr = Array.isArray(data) ? data : (data?.users || data?.contatos || []);
-  
-  return arr.map((c: any) => ({
-    name: c.nome || c.name || c.full_name || c.titulo || 'Sem nome',
-    phone: c.telefone || c.phone || c.phone_number || c.identifier || c.whatsapp || ''
-  })).filter((x: any) => x.phone);
+  try {
+    const response = await fetch(WEBHOOK_LIST_ENTS, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    console.log('[fetchUsersByEmpreendimentos] Resposta recebida:', {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[fetchUsersByEmpreendimentos] Erro HTTP:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText
+      });
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log('[fetchUsersByEmpreendimentos] Dados recebidos:', {
+      type: typeof data,
+      isArray: Array.isArray(data),
+      keys: typeof data === 'object' && data !== null ? Object.keys(data) : [],
+      sample: Array.isArray(data) ? data.slice(0, 2) : data
+    });
+    
+    const arr = Array.isArray(data) ? data : (data?.users || data?.contatos || []);
+    console.log('[fetchUsersByEmpreendimentos] Array extraído:', { length: arr.length, sample: arr.slice(0, 3) });
+    
+    const mapped = arr.map((c: any) => ({
+      name: c.nome || c.name || c.full_name || c.titulo || 'Sem nome',
+      phone: c.telefone || c.phone || c.phone_number || c.identifier || c.whatsapp || ''
+    })).filter((x: any) => x.phone);
+    
+    console.log('[fetchUsersByEmpreendimentos] Resultado final:', { count: mapped.length, items: mapped });
+    return mapped;
+  } catch (e: any) {
+    console.error('[fetchUsersByEmpreendimentos] Erro capturado:', e);
+    throw e;
+  }
 }
 
 // Verificar status da conexão Evolution

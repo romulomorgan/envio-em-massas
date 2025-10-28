@@ -861,10 +861,28 @@ const Index = () => {
 
   // Carrega empreendimentos automaticamente quando tiver acesso CV
   useEffect(() => {
-    if (hasCvAccess && listMode === 'empreendimentos') {
+    console.log('[useEffect:empreendimentos] Verificando condições...', { 
+      hasCvAccess, 
+      listMode,
+      empresasTokensData: empresasTokensData ? '✅' : '❌'
+    });
+    addDebug('emp', 'useEffect verificação', { 
+      hasCvAccess, 
+      listMode,
+      hasEmpresasData: !!empresasTokensData
+    });
+    
+    if (hasCvAccess && listMode === 'empreendimentos' && empresasTokensData) {
+      console.log('[useEffect:empreendimentos] ✅ Condições atendidas, chamando loadEmpreendimentos');
       loadEmpreendimentos();
+    } else {
+      console.log('[useEffect:empreendimentos] ❌ Condições não atendidas:', {
+        hasCvAccess_ok: hasCvAccess ? '✅' : '❌',
+        listMode_ok: listMode === 'empreendimentos' ? '✅' : '❌',
+        empresasTokensData_ok: empresasTokensData ? '✅' : '❌'
+      });
     }
-  }, [hasCvAccess, listMode]);
+  }, [hasCvAccess, listMode, empresasTokensData]);
 
   // ========== FUNÇÕES DE CONTATOS ==========
   
@@ -1154,13 +1172,42 @@ const Index = () => {
   }
 
   async function loadEmpreendimentos() {
-    if (!hasCvAccess || empsBusy) {
-      console.log('[loadEmpreendimentos] Aguardando acesso CV ou já carregando...', { hasCvAccess, empsBusy });
+    console.log('[loadEmpreendimentos] Iniciando...', { 
+      hasCvAccess, 
+      empsBusy, 
+      empresasTokensData: empresasTokensData ? '✅' : '❌',
+      listMode 
+    });
+    addDebug('emp', 'loadEmpreendimentos iniciado', { 
+      hasCvAccess, 
+      empsBusy,
+      hasEmpresasData: !!empresasTokensData,
+      cv_url: empresasTokensData?.cv_url || '❌',
+      cv_email: empresasTokensData?.cv_email || '❌',
+      cv_apikey: empresasTokensData?.cv_apikey ? '✅' : '❌',
+      listMode
+    });
+    
+    if (!hasCvAccess) {
+      console.log('[loadEmpreendimentos] ❌ Acesso CV negado ou não disponível');
+      addDebug('emp', 'Acesso CV negado', { hasCvAccess });
+      setStatus('❌ Acesso ao CV não disponível. Verifique as configurações.');
+      return;
+    }
+    
+    if (empsBusy) {
+      console.log('[loadEmpreendimentos] Já está carregando...');
       return;
     }
     
     if (!empresasTokensData || !empresasTokensData.cv_url || !empresasTokensData.cv_email || !empresasTokensData.cv_apikey) {
       console.log('[loadEmpreendimentos] ❌ Dados de EMPRESAS_TOKENS não disponíveis:', empresasTokensData);
+      addDebug('emp', 'Credenciais CV incompletas', { 
+        empresasTokensData,
+        cv_url: empresasTokensData?.cv_url || 'ausente',
+        cv_email: empresasTokensData?.cv_email || 'ausente',
+        cv_apikey: empresasTokensData?.cv_apikey ? 'presente' : 'ausente'
+      });
       setStatus('❌ Credenciais CV não encontradas. Verifique a tabela EMPRESAS_TOKENS.');
       return;
     }
@@ -1169,15 +1216,16 @@ const Index = () => {
     setStatus('Carregando empreendimentos...');
     
     try {
-      console.log('[loadEmpreendimentos] Carregando com credenciais:', {
-        cv_url: empresasTokensData.cv_url,
-        cv_email: empresasTokensData.cv_email,
-        cv_apikey: empresasTokensData.cv_apikey ? '✅' : '❌'
-      });
-      addDebug('emp', 'List empreendimentos request', {
+      console.log('[loadEmpreendimentos] ✅ Iniciando requisição para:', empresasTokensData.cv_url);
+      addDebug('emp', 'Requisição de empreendimentos', {
         url: empresasTokensData.cv_url,
         email: empresasTokensData.cv_email,
-        token: mask(empresasTokensData.cv_apikey)
+        token: mask(empresasTokensData.cv_apikey),
+        headers_que_serao_enviados: {
+          accept: 'application/json',
+          email: empresasTokensData.cv_email,
+          token: mask(empresasTokensData.cv_apikey)
+        }
       });
       
       const list = await fetchEmpreendimentos(
@@ -1186,8 +1234,12 @@ const Index = () => {
         empresasTokensData.cv_apikey
       );
       
-      console.log('[loadEmpreendimentos] Empreendimentos recebidos:', list);
-      addDebug('emp', 'List empreendimentos response', { count: list.length, sample: list.slice(0, 3) });
+      console.log('[loadEmpreendimentos] ✅ Resposta recebida:', { count: list.length, list });
+      addDebug('emp', 'Empreendimentos recebidos', { 
+        count: list.length, 
+        sample: list.slice(0, 5),
+        todos: list
+      });
       
       setEmpreendimentos(list);
       setStatus(list.length > 0 
@@ -1195,23 +1247,58 @@ const Index = () => {
         : 'Nenhum empreendimento encontrado.'
       );
     } catch (e: any) {
-      console.error('[loadEmpreendimentos] Erro:', e);
-      addDebug('emp', 'Erro na listagem de empreendimentos', { error: String(e) });
+      console.error('[loadEmpreendimentos] ❌ Erro:', e);
+      addDebug('emp', 'ERRO ao carregar empreendimentos', { 
+        error: String(e),
+        message: e.message,
+        stack: e.stack,
+        name: e.name
+      });
       setStatus(`❌ Erro ao carregar empreendimentos: ${e.message}`);
       setEmpreendimentos([]);
     } finally {
       setEmpsBusy(false);
+      console.log('[loadEmpreendimentos] Finalizado');
     }
   }
 
   async function loadFromEmps() {
+    console.log('[loadFromEmps] Iniciando...', {
+      selectedEmpIds: selectedEmpIds.length,
+      selectedProfileId,
+      originCanon,
+      accountId,
+      conversationId
+    });
+    addDebug('emp', 'loadFromEmps iniciado', {
+      selectedEmpIds_count: selectedEmpIds.length,
+      selectedEmpIds: selectedEmpIds,
+      selectedProfileId,
+      originCanon,
+      accountId,
+      conversationId
+    });
+    
     if (!selectedEmpIds.length) {
+      console.log('[loadFromEmps] ❌ Nenhum empreendimento selecionado');
       setStatus('❌ Selecione ao menos um empreendimento');
       return;
     }
     
     const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
+    console.log('[loadFromEmps] Perfil encontrado:', selectedProfile ? '✅' : '❌', selectedProfile);
+    
     if (!selectedProfile || !originCanon || !accountId) {
+      console.log('[loadFromEmps] ❌ Dados incompletos:', {
+        selectedProfile: selectedProfile ? '✅' : '❌',
+        originCanon: originCanon ? '✅' : '❌',
+        accountId: accountId ? '✅' : '❌'
+      });
+      addDebug('emp', 'Dados incompletos para loadFromEmps', {
+        selectedProfile: !!selectedProfile,
+        originCanon,
+        accountId
+      });
       setStatus('❌ Perfil não identificado ou dados incompletos.');
       return;
     }
@@ -1227,20 +1314,18 @@ const Index = () => {
           nome: e.name || e.title || String(e.id)
         }));
       
-      console.log('[loadFromEmps] Payload enviado:', {
+      const payload = {
         origin: originCanon,
         accountId: accountId,
         inboxId: selectedProfile.inbox_id?.toString() || '',
         conversationId: conversationId || '',
         empreendimentos: selectedEmps
-      });
-      addDebug('emp', 'Users by empreendimentos request', {
+      };
+      
+      console.log('[loadFromEmps] ✅ Payload completo:', payload);
+      addDebug('emp', 'Requisição de usuários por empreendimentos', {
         url: WEBHOOK_LIST_ENTS,
-        origin: originCanon,
-        accountId: accountId,
-        inboxId: selectedProfile.inbox_id?.toString() || '',
-        conversationId: conversationId || '',
-        empreendimentos: selectedEmps
+        payload_completo: payload
       });
       
       const users = await fetchUsersByEmpreendimentos(
@@ -1251,8 +1336,12 @@ const Index = () => {
         selectedEmps
       );
       
-      console.log('[loadFromEmps] Usuários recebidos:', users);
-      addDebug('emp', 'Users by empreendimentos response', { count: users.length, sample: users.slice(0, 3) });
+      console.log('[loadFromEmps] ✅ Resposta recebida:', { count: users.length, users });
+      addDebug('emp', 'Usuários recebidos por empreendimentos', { 
+        count: users.length, 
+        sample: users.slice(0, 5),
+        todos: users
+      });
       
       const duplicates = new Set<string>();
       const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
