@@ -307,22 +307,6 @@ const Index = () => {
       
       const record = list[0];
       
-      // DEBUG: Log completo do registro RAW da tabela
-      console.log('[empresasTokens] 📋 REGISTRO RAW da tabela EMPRESAS_TOKENS:', record);
-      console.log('[empresasTokens] 🔑 Campos disponíveis:', Object.keys(record));
-      console.log('[empresasTokens] 📊 Valores dos campos booleanos:', {
-        'cv_active (raw)': record.cv_active,
-        'cv_active (type)': typeof record.cv_active,
-        'is_active (raw)': record.is_active,
-        'is_active (type)': typeof record.is_active
-      });
-      addDebug('emp_tokens', 'Registro RAW completo', { 
-        record,
-        keys: Object.keys(record),
-        cv_active_raw: record.cv_active,
-        is_active_raw: record.is_active
-      });
-      
       const empresasData = {
         cv_url: record.cv_url || '',
         cv_email: record.cv_email || '',
@@ -1198,25 +1182,10 @@ const Index = () => {
   }
 
   async function loadEmpreendimentos() {
-    console.log('[loadEmpreendimentos] Iniciando...', { 
-      hasCvAccess, 
-      empsBusy, 
-      empresasTokensData: empresasTokensData ? '✅' : '❌',
-      listMode 
-    });
-    addDebug('emp', 'loadEmpreendimentos iniciado', { 
-      hasCvAccess, 
-      empsBusy,
-      hasEmpresasData: !!empresasTokensData,
-      cv_url: empresasTokensData?.cv_url || '❌',
-      cv_email: empresasTokensData?.cv_email || '❌',
-      cv_apikey: empresasTokensData?.cv_apikey ? '✅' : '❌',
-      listMode
-    });
+    console.log('[loadEmpreendimentos] Iniciando...', { hasCvAccess, listMode });
     
     if (!hasCvAccess) {
       console.log('[loadEmpreendimentos] ❌ Acesso CV negado ou não disponível');
-      addDebug('emp', 'Acesso CV negado', { hasCvAccess });
       setStatus('❌ Acesso ao CV não disponível. Verifique as configurações.');
       return;
     }
@@ -1227,13 +1196,7 @@ const Index = () => {
     }
     
     if (!empresasTokensData || !empresasTokensData.cv_url || !empresasTokensData.cv_email || !empresasTokensData.cv_apikey) {
-      console.log('[loadEmpreendimentos] ❌ Dados de EMPRESAS_TOKENS não disponíveis:', empresasTokensData);
-      addDebug('emp', 'Credenciais CV incompletas', { 
-        empresasTokensData,
-        cv_url: empresasTokensData?.cv_url || 'ausente',
-        cv_email: empresasTokensData?.cv_email || 'ausente',
-        cv_apikey: empresasTokensData?.cv_apikey ? 'presente' : 'ausente'
-      });
+      console.log('[loadEmpreendimentos] ❌ Dados de EMPRESAS_TOKENS não disponíveis');
       setStatus('❌ Credenciais CV não encontradas. Verifique a tabela EMPRESAS_TOKENS.');
       return;
     }
@@ -1243,16 +1206,6 @@ const Index = () => {
     
     try {
       console.log('[loadEmpreendimentos] ✅ Iniciando requisição para:', empresasTokensData.cv_url);
-      addDebug('emp', 'Requisição de empreendimentos', {
-        url: empresasTokensData.cv_url,
-        email: empresasTokensData.cv_email,
-        token: mask(empresasTokensData.cv_apikey),
-        headers_que_serao_enviados: {
-          accept: 'application/json',
-          email: empresasTokensData.cv_email,
-          token: mask(empresasTokensData.cv_apikey)
-        }
-      });
       
       const list = await fetchEmpreendimentos(
         empresasTokensData.cv_url,
@@ -1260,12 +1213,7 @@ const Index = () => {
         empresasTokensData.cv_apikey
       );
       
-      console.log('[loadEmpreendimentos] ✅ Resposta recebida:', { count: list.length, list });
-      addDebug('emp', 'Empreendimentos recebidos', { 
-        count: list.length, 
-        sample: list.slice(0, 5),
-        todos: list
-      });
+      console.log('[loadEmpreendimentos] ✅ Resposta recebida:', { count: list.length });
       
       setEmpreendimentos(list);
       setStatus(list.length > 0 
@@ -1274,12 +1222,6 @@ const Index = () => {
       );
     } catch (e: any) {
       console.error('[loadEmpreendimentos] ❌ Erro:', e);
-      addDebug('emp', 'ERRO ao carregar empreendimentos', { 
-        error: String(e),
-        message: e.message,
-        stack: e.stack,
-        name: e.name
-      });
       setStatus(`❌ Erro ao carregar empreendimentos: ${e.message}`);
       setEmpreendimentos([]);
     } finally {
@@ -1291,18 +1233,7 @@ const Index = () => {
   async function loadFromEmps() {
     console.log('[loadFromEmps] Iniciando...', {
       selectedEmpIds: selectedEmpIds.length,
-      selectedProfileId,
-      originCanon,
-      accountId,
-      conversationId
-    });
-    addDebug('emp', 'loadFromEmps iniciado', {
-      selectedEmpIds_count: selectedEmpIds.length,
-      selectedEmpIds: selectedEmpIds,
-      selectedProfileId,
-      originCanon,
-      accountId,
-      conversationId
+      selectedProfileId
     });
     
     if (!selectedEmpIds.length) {
@@ -1312,19 +1243,10 @@ const Index = () => {
     }
     
     const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
-    console.log('[loadFromEmps] Perfil encontrado:', selectedProfile ? '✅' : '❌', selectedProfile);
+    console.log('[loadFromEmps] Perfil encontrado:', selectedProfile ? '✅' : '❌');
     
     if (!selectedProfile || !originCanon || !accountId) {
-      console.log('[loadFromEmps] ❌ Dados incompletos:', {
-        selectedProfile: selectedProfile ? '✅' : '❌',
-        originCanon: originCanon ? '✅' : '❌',
-        accountId: accountId ? '✅' : '❌'
-      });
-      addDebug('emp', 'Dados incompletos para loadFromEmps', {
-        selectedProfile: !!selectedProfile,
-        originCanon,
-        accountId
-      });
+      console.log('[loadFromEmps] ❌ Dados incompletos');
       setStatus('❌ Perfil não identificado ou dados incompletos.');
       return;
     }
@@ -1835,18 +1757,6 @@ const Index = () => {
         return;
       }
       
-      // Debug: Mostrar estrutura dos primeiros 2 logs
-      console.log('[handleDownloadExcel] Total de logs:', logs.length);
-      console.log('[handleDownloadExcel] Estrutura do primeiro log:', JSON.stringify(logs[0], null, 2));
-      if (logs.length > 1) {
-        console.log('[handleDownloadExcel] Estrutura do segundo log:', JSON.stringify(logs[1], null, 2));
-      }
-      addDebug('excel', 'Estrutura dos logs', { 
-        total: logs.length, 
-        firstLog: logs[0],
-        secondLog: logs[1] || null
-      });
-      
       // Contar sucessos e falhas
       const totalLogs = logs.length;
       const sucessos = logs.filter((log: any) => 
@@ -1855,27 +1765,11 @@ const Index = () => {
       const falhas = totalLogs - sucessos;
       
       // Preparar dados para Excel com Numero, Status e Motivo
-      const excelData = logs.map((log: any, index: number) => {
+      const excelData = logs.map((log: any) => {
         const numero = extractNumberFromLog(log);
         const isSuccess = log.level === 'success' || log.level === 'info' || log.http_status === 200 || log.http_status === 201;
         const status = isSuccess ? 'Sucesso' : 'Falha';
         const motivo = !isSuccess ? extractReasonFromLog(log) : '';
-        
-        // Debug para os primeiros 3 registros
-        if (index < 3) {
-          console.log(`[handleDownloadExcel] Log #${index + 1}:`, {
-            numero_extraido: numero,
-            status: status,
-            motivo: motivo,
-            log_completo: log
-          });
-          addDebug('excel', `Dados extraídos do log #${index + 1}`, {
-            numero: numero,
-            status: status,
-            motivo: motivo,
-            campos_disponiveis: Object.keys(log)
-          });
-        }
         
         return {
           Numero: numero ? formatPhoneLocal(numero) : '-',

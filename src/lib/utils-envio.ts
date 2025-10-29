@@ -148,79 +148,76 @@ export const WEBHOOK_LIST_GROUP_PARTICIPANTS = 'https://web.iadmin.ai/webhook/li
 export const WEBHOOK_LIST_ENTS = 'https://web.iadmin.ai/webhook/usuario-por-empreendimentos';
 
 export function extractReasonFromLog(l: any): string {
-  try {
-    const http = l.http_status ?? l.http_code ?? l.status_code;
-    
-    // Para erros, extrai a mensagem de erro detalhada
-    if (l.level === 'error' || l.level === 'fail' || l.level === 'failed') {
-      let msgObj = l.message_json;
-      
-      // Se message_json é string, tenta parsear
-      if (typeof msgObj === 'string') {
-        try {
-          msgObj = JSON.parse(msgObj);
-        } catch (e) {
-          // Se falhar o parse, usa a string diretamente
-          return `${http ? `HTTP ${http}: ` : ''}${msgObj}`;
-        }
-      }
-      
-      // Extrai mensagem de erro de vários possíveis campos
-      const errorMsg = 
-        msgObj?.error?.message || 
-        msgObj?.message || 
-        msgObj?.error_message ||
-        msgObj?.response?.message || 
-        msgObj?.response?.data?.message ||
-        msgObj?.status || 
-        msgObj?.error || 
-        l.message ||
-        l.error_message ||
-        '';
-      
-      // Se encontrou mensagem, formata com HTTP code
-      if (errorMsg) {
-        const cleanMsg = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
-        return http ? `HTTP ${http}: ${cleanMsg}` : cleanMsg;
-      }
-      
-      // Se não encontrou mensagem mas tem HTTP code
-      if (http) {
-        return `HTTP ${http}`;
-      }
-      
-      // Última tentativa: usar todo o message_json
-      if (msgObj && Object.keys(msgObj).length > 0) {
-        return JSON.stringify(msgObj);
-      }
+  // Se level não for 'error', não há motivo de falha
+  if (l?.level !== 'error') return '';
+  
+  // Tenta extrair do message_json
+  let msgJson: any = null;
+  if (typeof l?.message_json === 'string') {
+    try {
+      msgJson = JSON.parse(l.message_json);
+    } catch (e) {
+      // Se não conseguir parsear, usa o próprio texto como erro
+      return l.message_json || 'Erro desconhecido';
+    }
+  } else if (typeof l?.message_json === 'object') {
+    msgJson = l.message_json;
+  }
+  
+  // Tenta extrair o erro do message_json
+  if (msgJson) {
+    // Erro direto
+    if (msgJson.error) {
+      return String(msgJson.error);
     }
     
-    // Para não-erros, retorna apenas o HTTP code se houver
-    return http ? `HTTP ${http}` : '';
-  } catch (e) {
-    console.error('[extractReasonFromLog] Erro:', e);
-    return '';
+    // Resposta de erro da API
+    if (msgJson.response) {
+      if (typeof msgJson.response === 'string') {
+        return msgJson.response;
+      }
+      if (msgJson.response.error) {
+        return String(msgJson.response.error);
+      }
+      if (msgJson.response.message) {
+        return String(msgJson.response.message);
+      }
+    }
   }
+  
+  // Fallback para outros campos
+  if (l?.error_message) return String(l.error_message);
+  if (l?.error) return String(l.error);
+  if (l?.reason) return String(l.reason);
+  if (l?.message) return String(l.message);
+  
+  // Se http_status >= 400, usa o status como motivo
+  const httpStatus = Number(l?.http_status || l?.http_code || 0);
+  if (httpStatus >= 400) {
+    return `HTTP ${httpStatus}`;
+  }
+  
+  return 'Erro desconhecido';
 }
 
 export function extractNumberFromLog(l: any): string {
-  // Lista de possíveis campos onde o telefone pode estar
+  // O backend salva o número diretamente no campo 'number'
+  if (l?.number) {
+    const cleaned = String(l.number).replace(/\D+/g, '');
+    if (cleaned && cleaned.length >= 10) return cleaned;
+  }
+  
+  // Fallback para outros campos
   const tryList = [
-    l?.to_number, 
     l?.to, 
-    l?.number, 
     l?.recipient, 
     l?.phone, 
     l?.telefone,
-    l?.request_json?.number, 
-    l?.request_json?.to, 
-    l?.request_json?.body?.number,
-    l?.request_json?.body?.to,
+    l?.contact,
     l?.destination,
     l?.recipient_number
   ];
   
-  // Tenta extrair de campos diretos
   for (const v of tryList) {
     if (v) {
       const cleaned = String(v).replace(/\D+/g, '');
@@ -228,17 +225,22 @@ export function extractNumberFromLog(l: any): string {
     }
   }
   
-  // Tenta parsear request_json se for string
-  if (typeof l?.request_json === 'string') {
-    try {
-      const parsed = JSON.parse(l.request_json);
-      const num = parsed?.number || parsed?.to || parsed?.body?.number || parsed?.body?.to;
-      if (num) {
-        const cleaned = String(num).replace(/\D+/g, '');
-        if (cleaned && cleaned.length >= 10) return cleaned;
+  // Tenta extrair do message_json
+  if (l?.message_json) {
+    let msgJson: any = null;
+    if (typeof l.message_json === 'string') {
+      try {
+        msgJson = JSON.parse(l.message_json);
+      } catch (e) {
+        // Ignora erros de parsing
       }
-    } catch (e) {
-      // Ignora erros de parsing
+    } else if (typeof l.message_json === 'object') {
+      msgJson = l.message_json;
+    }
+    
+    if (msgJson?.body?.number) {
+      const cleaned = String(msgJson.body.number).replace(/\D+/g, '');
+      if (cleaned && cleaned.length >= 10) return cleaned;
     }
   }
   
