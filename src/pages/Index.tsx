@@ -326,15 +326,16 @@ const Index = () => {
         cv_apikey: record.cv_apikey || '',
         is_active: !!(record.is_active === true || record.is_active === 'true' || record.is_active === 1),
         cv_active: !!(record.cv_active === true || record.cv_active === 'true' || record.cv_active === 1),
-        // Visibilidade dos botões de mensagem (true por padrão se coluna não existir)
-        texto: record.texto === undefined ? true : !!(record.texto === true || record.texto === 'true' || record.texto === 1),
-        imagem: record.imagem === undefined ? true : !!(record.imagem === true || record.imagem === 'true' || record.imagem === 1),
-        video: record.video === undefined ? true : !!(record.video === true || record.video === 'true' || record.video === 1),
-        audio: record.audio === undefined ? true : !!(record.audio === true || record.audio === 'true' || record.audio === 1),
-        documento: record.documento === undefined ? true : !!(record.documento === true || record.documento === 'true' || record.documento === 1),
-        link: record.link === undefined ? true : !!(record.link === true || record.link === 'true' || record.link === 1),
-        lista: record.lista === undefined ? true : !!(record.lista === true || record.lista === 'true' || record.lista === 1),
-        enquete: record.enquete === undefined ? true : !!(record.enquete === true || record.enquete === 'true' || record.enquete === 1)
+        // Visibilidade dos botões de mensagem (false por padrão se coluna não existir)
+        // Nomes das colunas no NocoDB: Texto, Imagem, Video, Audio, Documento, Link, Lista, Enquete (primeira letra maiúscula)
+        texto: record.Texto === undefined ? false : !!(record.Texto === true || record.Texto === 'true' || record.Texto === 1),
+        imagem: record.Imagem === undefined ? false : !!(record.Imagem === true || record.Imagem === 'true' || record.Imagem === 1),
+        video: record.Video === undefined ? false : !!(record.Video === true || record.Video === 'true' || record.Video === 1),
+        audio: record.Audio === undefined ? false : !!(record.Audio === true || record.Audio === 'true' || record.Audio === 1),
+        documento: record.Documento === undefined ? false : !!(record.Documento === true || record.Documento === 'true' || record.Documento === 1),
+        link: record.Link === undefined ? false : !!(record.Link === true || record.Link === 'true' || record.Link === 1),
+        lista: record.Lista === undefined ? false : !!(record.Lista === true || record.Lista === 'true' || record.Lista === 1),
+        enquete: record.Enquete === undefined ? false : !!(record.Enquete === true || record.Enquete === 'true' || record.Enquete === 1)
       };
       
       console.log('[empresasTokens] ✅ Dados convertidos:', {
@@ -2523,7 +2524,8 @@ const Index = () => {
               <div>
                 <SectionTitle>
                   <span>Mensagem</span>
-                  <div className="flex gap-2 flex-wrap">
+                </SectionTitle>
+                  <div className="flex gap-2 flex-wrap mt-4">
                     {blockButtonsVisibility.text && (
                       <SmallBtn onClick={() => addBlock('text')}>+ Texto</SmallBtn>
                     )}
@@ -2549,7 +2551,6 @@ const Index = () => {
                       <SmallBtn onClick={() => addBlock('poll')}>+ Enquete</SmallBtn>
                     )}
                   </div>
-                </SectionTitle>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
                   {/* Editor de blocos */}
