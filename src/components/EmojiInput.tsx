@@ -33,19 +33,19 @@ export function EmojiInput({ value, onChange, placeholder }: EmojiInputProps) {
   const insertEmoji = (emoji: string) => insertText(emoji);
 
   return (
-    <div className="relative">
+    <div className="space-y-2">
       <input
         ref={inputRef}
         type="text"
-        className="input-custom pr-28"
+        className="input-custom"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
       />
-      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+      <div className="flex items-center gap-2">
         <button
           type="button"
-          className="w-7 h-7 rounded-lg bg-secondary hover:bg-accent border border-border flex items-center justify-center text-base transition-colors"
+          className="w-8 h-8 rounded-lg bg-secondary hover:bg-accent border border-border flex items-center justify-center text-base transition-colors"
           onClick={() => setShowPicker(!showPicker)}
           title="Adicionar emoji"
         >
@@ -53,7 +53,7 @@ export function EmojiInput({ value, onChange, placeholder }: EmojiInputProps) {
         </button>
         <button
           type="button"
-          className="px-2 h-7 rounded-lg bg-secondary hover:bg-accent border border-border text-xs font-mono"
+          className="px-3 h-8 rounded-lg bg-secondary hover:bg-accent border border-border text-xs font-mono"
           onClick={() => insertText('{{nome}}')}
           title="Inserir {{nome}}"
         >
@@ -61,7 +61,7 @@ export function EmojiInput({ value, onChange, placeholder }: EmojiInputProps) {
         </button>
         <button
           type="button"
-          className="px-2 h-7 rounded-lg bg-secondary hover:bg-accent border border-border text-xs font-mono"
+          className="px-3 h-8 rounded-lg bg-secondary hover:bg-accent border border-border text-xs font-mono"
           onClick={() => insertText('{{data}}')}
           title="Inserir {{data}}"
         >
@@ -75,7 +75,7 @@ export function EmojiInput({ value, onChange, placeholder }: EmojiInputProps) {
             className="fixed inset-0 z-40"
             onClick={() => setShowPicker(false)}
           />
-          <div className="absolute right-0 top-full mt-2 z-50 bg-card border border-border rounded-xl shadow-lg p-3 w-72 max-h-60 overflow-y-auto">
+          <div className="absolute left-0 top-full mt-2 z-50 bg-card border border-border rounded-xl shadow-lg p-3 w-72 max-h-60 overflow-y-auto">
             <div className="grid grid-cols-8 gap-1">
               {emojis.map((emoji, idx) => (
                 <button

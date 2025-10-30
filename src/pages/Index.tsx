@@ -213,10 +213,23 @@ const Index = () => {
     dir: 'normal'
   });
   const [contactQuery, setContactQuery] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Blocos de mensagem
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [sampleName, setSampleName] = useState('João Silva');
+  
+  // Controle de visibilidade dos botões de mensagem (por padrão todos ocultos)
+  const [blockButtonsVisibility, setBlockButtonsVisibility] = useState({
+    text: false,
+    image: false,
+    video: false,
+    audio: false,
+    document: false,
+    link: false,
+    list: false,
+    poll: false
+  });
 
   // Agendamento e delays
   const [schedule, setSchedule] = useState('');
@@ -312,7 +325,16 @@ const Index = () => {
         cv_email: record.cv_email || '',
         cv_apikey: record.cv_apikey || '',
         is_active: !!(record.is_active === true || record.is_active === 'true' || record.is_active === 1),
-        cv_active: !!(record.cv_active === true || record.cv_active === 'true' || record.cv_active === 1)
+        cv_active: !!(record.cv_active === true || record.cv_active === 'true' || record.cv_active === 1),
+        // Visibilidade dos botões de mensagem (true por padrão se coluna não existir)
+        texto: record.texto === undefined ? true : !!(record.texto === true || record.texto === 'true' || record.texto === 1),
+        imagem: record.imagem === undefined ? true : !!(record.imagem === true || record.imagem === 'true' || record.imagem === 1),
+        video: record.video === undefined ? true : !!(record.video === true || record.video === 'true' || record.video === 1),
+        audio: record.audio === undefined ? true : !!(record.audio === true || record.audio === 'true' || record.audio === 1),
+        documento: record.documento === undefined ? true : !!(record.documento === true || record.documento === 'true' || record.documento === 1),
+        link: record.link === undefined ? true : !!(record.link === true || record.link === 'true' || record.link === 1),
+        lista: record.lista === undefined ? true : !!(record.lista === true || record.lista === 'true' || record.lista === 1),
+        enquete: record.enquete === undefined ? true : !!(record.enquete === true || record.enquete === 'true' || record.enquete === 1)
       };
       
       console.log('[empresasTokens] ✅ Dados convertidos:', {
@@ -346,6 +368,29 @@ const Index = () => {
         hasCvAccess: cvAccess 
       });
       setHasCvAccess(cvAccess);
+      
+      // Atualiza visibilidade dos botões de mensagem
+      setBlockButtonsVisibility({
+        text: empresasData.texto,
+        image: empresasData.imagem,
+        video: empresasData.video,
+        audio: empresasData.audio,
+        document: empresasData.documento,
+        link: empresasData.link,
+        list: empresasData.lista,
+        poll: empresasData.enquete
+      });
+      
+      console.log('[empresasTokens] Visibilidade dos botões:', {
+        texto: empresasData.texto,
+        imagem: empresasData.imagem,
+        video: empresasData.video,
+        audio: empresasData.audio,
+        documento: empresasData.documento,
+        link: empresasData.link,
+        lista: empresasData.lista,
+        enquete: empresasData.enquete
+      });
       
       return empresasData;
     } catch (e) {
@@ -1354,6 +1399,10 @@ const Index = () => {
       callback: () => {
         setContacts([]);
         setSelectedContacts([]);
+        // Resetar input file
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
         setDeleteConfirm({ show: false, type: '' });
       }
     });
@@ -1378,6 +1427,10 @@ const Index = () => {
           const c = contacts.find(cc => cc.id === id);
           return c ? !predicate(c) : true;
         }));
+        // Resetar input file se limpar importados
+        if (source === 'importados' && fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
         setDeleteConfirm({ show: false, type: '' });
       }
     });
@@ -2275,17 +2328,52 @@ const Index = () => {
                 {listMode === 'importar' && (
                   <div className="space-y-3">
                     <div className="text-sm text-muted-foreground mb-2">
-                      Faça upload de um arquivo CSV ou XLSX com colunas: Nome, Telefone, Tags
+                      Importar contatos (CSV/XLS/XLSX)
                     </div>
-                    <input
-                      type="file"
-                      accept=".csv,.xlsx,.xls"
-                      className="input-custom"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImportFile(file);
-                      }}
-                    />
+                    <div className="text-sm text-muted-foreground mb-2">
+                      Colunas obrigatórias: <b>Nome, Telefone</b>. Duplicados são ignorados.
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".csv,.xlsx,.xls"
+                          className="input-custom"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleImportFile(file);
+                          }}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <SmallBtn
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = '/modelo-contatos.csv';
+                            link.download = 'modelo-contatos.csv';
+                            link.click();
+                          }}
+                          variant="secondary"
+                          title="Baixar modelo CSV"
+                        >
+                          Baixar modelo (CSV)
+                        </SmallBtn>
+                        <SmallBtn
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = '/modelo-contatos.xlsx';
+                            link.download = 'modelo-contatos.xlsx';
+                            link.click();
+                          }}
+                          variant="secondary"
+                          title="Baixar modelo XLSX"
+                        >
+                          Baixar modelo (XLSX)
+                        </SmallBtn>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2435,15 +2523,31 @@ const Index = () => {
               <div>
                 <SectionTitle>
                   <span>Mensagem</span>
-                  <div className="flex gap-2">
-                    <SmallBtn onClick={() => addBlock('text')}>+ Texto</SmallBtn>
-                    <SmallBtn onClick={() => addBlock('image')}>+ Imagem</SmallBtn>
-                    <SmallBtn onClick={() => addBlock('video')}>+ Vídeo</SmallBtn>
-                    <SmallBtn onClick={() => addBlock('audio')}>+ Áudio</SmallBtn>
-                    <SmallBtn onClick={() => addBlock('document')}>+ Documento</SmallBtn>
-                    <SmallBtn onClick={() => addBlock('link')}>+ Link</SmallBtn>
-                    <SmallBtn onClick={() => addBlock('list')}>+ Lista</SmallBtn>
-                    <SmallBtn onClick={() => addBlock('poll')}>+ Enquete</SmallBtn>
+                  <div className="flex gap-2 flex-wrap">
+                    {blockButtonsVisibility.text && (
+                      <SmallBtn onClick={() => addBlock('text')}>+ Texto</SmallBtn>
+                    )}
+                    {blockButtonsVisibility.image && (
+                      <SmallBtn onClick={() => addBlock('image')}>+ Imagem</SmallBtn>
+                    )}
+                    {blockButtonsVisibility.video && (
+                      <SmallBtn onClick={() => addBlock('video')}>+ Vídeo</SmallBtn>
+                    )}
+                    {blockButtonsVisibility.audio && (
+                      <SmallBtn onClick={() => addBlock('audio')}>+ Áudio</SmallBtn>
+                    )}
+                    {blockButtonsVisibility.document && (
+                      <SmallBtn onClick={() => addBlock('document')}>+ Documento</SmallBtn>
+                    )}
+                    {blockButtonsVisibility.link && (
+                      <SmallBtn onClick={() => addBlock('link')}>+ Link</SmallBtn>
+                    )}
+                    {blockButtonsVisibility.list && (
+                      <SmallBtn onClick={() => addBlock('list')}>+ Lista</SmallBtn>
+                    )}
+                    {blockButtonsVisibility.poll && (
+                      <SmallBtn onClick={() => addBlock('poll')}>+ Enquete</SmallBtn>
+                    )}
                   </div>
                 </SectionTitle>
 
