@@ -410,35 +410,68 @@ const Index = () => {
     }
 
     try {
-      console.log('[tenantConfig] Buscando perfil na evo_profiles:', { originCanon, accountId });
+      console.log('[tenantConfig] ========== INÍCIO DA BUSCA DO PERFIL ==========');
+      console.log('[tenantConfig] originCanon:', originCanon);
+      console.log('[tenantConfig] accountId atual:', accountId || '❌ VAZIO');
       addDebug('tenant', 'Query evo_profiles', { originCanon, accountId });
       const baseUrl = NOCO_URL;
       let data: any = null;
 
-      // Se temos account_id, busca com ambos os filtros na tabela evo_profiles
+      // CRÍTICO: Se temos account_id, busca com AMBOS os filtros (AND) na tabela evo_profiles
       if (accountId) {
         const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
         const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
-        console.log('[tenantConfig] URL com account_id (evo_profiles):', url);
-        addDebug('tenant', 'GET evo_profiles (with account_id)', { url });
+        console.log('[tenantConfig] 🔍 Buscando COM account_id (AND):', { account_id: accountId, chatwoot_origin: originCanon });
+        console.log('[tenantConfig] WHERE clause:', where);
+        console.log('[tenantConfig] URL completa:', url);
+        addDebug('tenant', 'GET evo_profiles (with account_id AND origin)', { url, where });
+        
         data = await nocoGET(url).catch((err) => {
-          console.error('[tenantConfig] Erro na busca com account_id:', err);
+          console.error('[tenantConfig] ❌ Erro na busca com account_id:', err);
           addDebug('tenant', 'Erro na busca com account_id', { error: String(err) });
           return null;
         });
+        
+        if (data && Array.isArray(data.list) && data.list.length > 0) {
+          console.log('[tenantConfig] ✅ Encontrado perfil com account_id E origin:', data.list.length, 'registros');
+          console.log('[tenantConfig] Registros retornados:', data.list.map((r: any) => ({
+            Id: r.Id,
+            account_id: r.account_id,
+            chatwoot_origin: r.chatwoot_origin
+          })));
+        } else {
+          console.warn('[tenantConfig] ⚠️ Nenhum perfil encontrado com account_id E origin. Tentando buscar apenas por origin...');
+        }
+      } else {
+        console.warn('[tenantConfig] ⚠️ PROBLEMA CRÍTICO: accountId está vazio! Não será possível fazer busca precisa.');
+        console.warn('[tenantConfig] A busca será feita apenas por origin, o que pode retornar o perfil ERRADO!');
       }
 
-      // Se não encontrou com account_id ou não tem account_id, busca só pelo origin
+      // FALLBACK: Se não encontrou com account_id OU não tem account_id, busca APENAS pelo origin
+      // ⚠️ ATENÇÃO: Isso pode retornar o perfil errado se houver múltiplas empresas com o mesmo origin!
       if (!data || !Array.isArray(data.list) || data.list.length === 0) {
         const where = `(chatwoot_origin,eq,${originCanon})`;
         const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
-        console.log('[tenantConfig] URL sem account_id (evo_profiles):', url);
-        addDebug('tenant', 'GET evo_profiles (by origin only)', { url });
+        console.log('[tenantConfig] 🔍 Buscando APENAS por origin (FALLBACK):', originCanon);
+        console.log('[tenantConfig] ⚠️ RISCO: Pode retornar perfil de outra empresa se houver múltiplas empresas com mesmo origin!');
+        console.log('[tenantConfig] WHERE clause:', where);
+        console.log('[tenantConfig] URL completa:', url);
+        addDebug('tenant', 'GET evo_profiles (by origin only - FALLBACK)', { url, where });
+        
         data = await nocoGET(url).catch((err) => {
-          console.error('[tenantConfig] Erro na busca sem account_id:', err);
+          console.error('[tenantConfig] ❌ Erro na busca sem account_id:', err);
           addDebug('tenant', 'Erro na busca sem account_id', { error: String(err) });
           return null;
         });
+        
+        if (data && Array.isArray(data.list)) {
+          console.log('[tenantConfig] Registros encontrados (apenas por origin):', data.list.length);
+          console.log('[tenantConfig] ⚠️ TODOS os perfis com este origin:', data.list.map((r: any) => ({
+            Id: r.Id,
+            account_id: r.account_id,
+            chatwoot_origin: r.chatwoot_origin
+          })));
+        }
       }
 
       const list = (Array.isArray(data?.list) ? data.list : []).map((r: any) => ({
@@ -594,6 +627,9 @@ const Index = () => {
       const currentUrl = window.location.href;
       const ref = typeof document !== 'undefined' ? document.referrer : '';
       
+      console.log('[URL DETECTION] ========== INÍCIO DA DETECÇÃO ==========');
+      console.log('[URL DETECTION] currentUrl:', currentUrl);
+      console.log('[URL DETECTION] referrer:', ref || '(vazio)');
       addDebug('init', 'URL Detection started', { currentUrl, referrer: ref || '(nenhum)' });
       
       const u = new URL(currentUrl);
@@ -605,6 +641,7 @@ const Index = () => {
       let conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
 
       if (acc || inbox || conv) {
+        console.log('[URL DETECTION] IDs da query string:', { acc, inbox, conv });
         addDebug('init', 'IDs from query string', { acc, inbox, conv });
       }
 
@@ -620,6 +657,7 @@ const Index = () => {
         conv = conv || hashConv;
         
         if (hashAcc || hashInbox || hashConv) {
+          console.log('[URL DETECTION] IDs do hash:', { acc: hashAcc, inbox: hashInbox, conv: hashConv });
           addDebug('init', 'IDs from hash', { acc: hashAcc, inbox: hashInbox, conv: hashConv });
         }
       }
@@ -627,6 +665,7 @@ const Index = () => {
       // 3) Pathname local (quando app estiver sob o mesmo domínio)
       if ((!acc || !inbox || !conv) && u.pathname) {
         const idsLocal = extractIdsFromPath(u.pathname);
+        console.log('[URL DETECTION] Tentando extrair do pathname local:', u.pathname, '=> IDs:', idsLocal);
         if (idsLocal.acc || idsLocal.inbox || idsLocal.conv) {
           addDebug('init', 'IDs from local pathname', idsLocal);
         }
@@ -640,36 +679,67 @@ const Index = () => {
         try {
           const ru = new URL(ref);
           const rPath = ru.pathname || '';
+          console.log('[URL DETECTION] Referrer URL completa:', ref);
+          console.log('[URL DETECTION] Referrer pathname:', rPath || '(vazio)');
+          
           if (rPath && rPath !== '/') {
             const idsRef = extractIdsFromPath(rPath);
+            console.log('[URL DETECTION] IDs extraídos do referrer pathname:', idsRef);
+            
             if (idsRef.acc || idsRef.inbox || idsRef.conv) {
               addDebug('init', 'IDs from referrer pathname', { pathname: rPath, ...idsRef });
             }
-            if (!acc && idsRef.acc) acc = idsRef.acc;
-            if (!inbox && idsRef.inbox) inbox = idsRef.inbox;
-            if (!conv && idsRef.conv) conv = idsRef.conv;
+            if (!acc && idsRef.acc) {
+              console.log('[URL DETECTION] ✅ account_id do referrer:', idsRef.acc);
+              acc = idsRef.acc;
+            }
+            if (!inbox && idsRef.inbox) {
+              console.log('[URL DETECTION] ✅ inbox_id do referrer:', idsRef.inbox);
+              inbox = idsRef.inbox;
+            }
+            if (!conv && idsRef.conv) {
+              console.log('[URL DETECTION] ✅ conversation_id do referrer:', idsRef.conv);
+              conv = idsRef.conv;
+            }
+          } else {
+            console.log('[URL DETECTION] ⚠️ Referrer pathname vazio ou /, não é possível extrair IDs');
+            addDebug('init', 'Referrer pathname vazio', { referrer: ref });
           }
         } catch (e) {
+          console.error('[URL DETECTION] ❌ Erro ao processar referrer:', e);
           addDebug('init', 'Erro ao processar referrer', { error: String(e) });
         }
+      } else {
+        console.log('[URL DETECTION] ⚠️ Nenhum referrer disponível');
       }
 
+      console.log('[URL DETECTION] ========== RESULTADO FINAL ==========');
+      console.log('[URL DETECTION] accountId:', acc || '❌ NÃO DETECTADO');
+      console.log('[URL DETECTION] inboxId:', inbox || '(vazio)');
+      console.log('[URL DETECTION] conversationId:', conv || '❌ NÃO DETECTADO');
       addDebug('init', 'IDs detectados da URL (FINAIS)', { accountId: acc, inboxId: inbox, conversationId: conv });
       
       if (acc) {
+        console.log('[URL DETECTION] 🎯 Definindo accountId:', acc);
         setAccountId(acc);
         if (typeof window !== 'undefined') (window as any).__ACCOUNT_ID__ = acc;
+      } else {
+        console.warn('[URL DETECTION] ⚠️ PROBLEMA: accountId NÃO FOI DETECTADO! Isso causará problemas na busca do perfil.');
       }
       if (inbox) {
         setInboxId(inbox);
         if (typeof window !== 'undefined') (window as any).__INBOX_ID__ = inbox;
       }
       if (conv) {
+        console.log('[URL DETECTION] 🎯 Definindo conversationId:', conv);
         setConversationId(conv);
         if (typeof window !== 'undefined') (window as any).__CONVERSATION_ID__ = conv;
+      } else {
+        console.warn('[URL DETECTION] ⚠️ PROBLEMA: conversationId NÃO FOI DETECTADO!');
       }
       
     } catch (e) {
+      console.error('[URL DETECTION] ❌ Erro geral na detecção de URL:', e);
       addDebug('init', 'Erro geral na detecção de URL', { error: String(e) });
     }
   }, []);
@@ -709,15 +779,28 @@ const Index = () => {
             const currentInbox = (window as any).__INBOX_ID__ || '';
             const currentConv = (window as any).__CONVERSATION_ID__ || '';
             
+            console.log('[postMessage:appContext] Comparando valores:', {
+              'URL accountId': currentAcc || '(vazio)',
+              'appContext accountId': acc2 || '(vazio)',
+              'URL conversationId': currentConv || '(vazio)',
+              'appContext conversationId': conv2 || '(vazio)'
+            });
+            
             if (acc2 && !currentAcc) {
+              console.log('[postMessage:appContext] ✅ Usando accountId do appContext:', acc2);
               setAccountId(acc2);
               if (typeof window !== 'undefined') (window as any).__ACCOUNT_ID__ = acc2;
               addDebug('postMessage', 'accountId atualizado via appContext', { acc2 });
             } else if (acc2 && currentAcc !== acc2) {
+              console.warn('[postMessage:appContext] ⚠️ CONFLITO: accountId do appContext DIFERENTE do detectado na URL!');
+              console.warn('[postMessage:appContext] URL:', currentAcc, 'vs appContext:', acc2);
+              console.warn('[postMessage:appContext] 🎯 MANTENDO o valor da URL (mais confiável):', currentAcc);
               addDebug('postMessage', '⚠️ accountId do appContext DIFERENTE do detectado - mantendo o da URL', { 
                 urlValue: currentAcc, 
                 appContextValue: acc2 
               });
+            } else if (currentAcc && !acc2) {
+              console.log('[postMessage:appContext] ℹ️ Já temos accountId da URL, appContext não tem - mantendo URL:', currentAcc);
             }
             
             if (inbox2 && !currentInbox) {
@@ -727,13 +810,19 @@ const Index = () => {
             }
             
             if (conv2 && !currentConv) {
+              console.log('[postMessage:appContext] ✅ Usando conversationId do appContext:', conv2);
               setConversationId(conv2);
               if (typeof window !== 'undefined') (window as any).__CONVERSATION_ID__ = conv2;
               addDebug('postMessage', 'conversationId atualizado via appContext', { conv2 });
             } else if (!conv2 && currentConv) {
+              console.log('[postMessage:appContext] ℹ️ Já temos conversationId da URL, appContext não tem - mantendo URL:', currentConv);
               addDebug('postMessage', '⚠️ appContext não tem conversationId - mantendo o da URL', { 
                 urlValue: currentConv 
               });
+            } else if (conv2 && currentConv !== conv2) {
+              console.warn('[postMessage:appContext] ⚠️ CONFLITO: conversationId do appContext DIFERENTE do detectado na URL!');
+              console.warn('[postMessage:appContext] URL:', currentConv, 'vs appContext:', conv2);
+              console.warn('[postMessage:appContext] 🎯 MANTENDO o valor da URL (mais confiável):', currentConv);
             }
             
             return; // já tratou
