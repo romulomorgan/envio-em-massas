@@ -236,8 +236,8 @@ const Index = () => {
   const [defaultCountryCode, setDefaultCountryCode] = useState('55');
   const [itemDelay, setItemDelay] = useState(3);
   const [itemVariance, setItemVariance] = useState(4);
-  const [contactDelay, setContactDelay] = useState(10);
-  const [contactVariance, setContactVariance] = useState(10);
+  const [contactDelay, setContactDelay] = useState(30);
+  const [contactVariance, setContactVariance] = useState(300);
 
   // Envio
   const [sending, setSending] = useState(false);
