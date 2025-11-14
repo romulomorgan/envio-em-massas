@@ -17,18 +17,54 @@ export function ensureE164(phone: string, defaultCountry: string = '55'): string
   return '+' + digits;
 }
 
+// Lista de DDDs válidos no Brasil (11-99, excluindo alguns inexistentes)
+const VALID_DDDS = [
+  '11', '12', '13', '14', '15', '16', '17', '18', '19', // SP
+  '21', '22', '24', // RJ
+  '27', '28', // ES
+  '31', '32', '33', '34', '35', '37', '38', // MG
+  '41', '42', '43', '44', '45', '46', // PR
+  '47', '48', '49', // SC
+  '51', '53', '54', '55', // RS
+  '61', // DF
+  '62', '64', // GO
+  '63', // TO
+  '65', '66', // MT
+  '67', // MS
+  '68', // AC
+  '69', // RO
+  '71', '73', '74', '75', '77', // BA
+  '79', // SE
+  '81', '87', // PE
+  '82', // AL
+  '83', // PB
+  '84', // RN
+  '85', '88', // CE
+  '86', '89', // PI
+  '91', '93', '94', // PA
+  '92', '97', // AM
+  '95', // RR
+  '96', // AP
+  '98', '99', // MA
+];
+
 /**
- * Normaliza número de telefone brasileiro, adicionando o 9º dígito em celulares quando necessário.
- * Todos os celulares brasileiros devem ter 9 dígitos e começar com 9.
- * 
- * @param phone - Número de telefone em qualquer formato
- * @param defaultCountry - Código do país padrão (55 para Brasil)
- * @returns Número normalizado no formato E.164 (+5511999999999)
+ * Valida e normaliza número de telefone brasileiro.
+ * @returns Objeto com número normalizado e informações de validação
  */
-export function normalizeBrazilianPhone(phone: string, defaultCountry: string = '55'): string {
+export function validateAndNormalizeBrazilianPhone(phone: string, defaultCountry: string = '55'): {
+  valid: boolean;
+  phone: string;
+  error?: string;
+  warning?: string;
+} {
   // Remove todos os caracteres não numéricos
   let digits = stripDigits(phone);
-  if (!digits) return '';
+  
+  // Valida se tem dígitos
+  if (!digits || digits.length < 10) {
+    return { valid: false, phone: '', error: 'Número muito curto ou vazio' };
+  }
   
   // Remove zero à esquerda
   if (digits.startsWith('0')) {
@@ -40,44 +76,78 @@ export function normalizeBrazilianPhone(phone: string, defaultCountry: string = 
   let localNumber = digits;
   
   if (digits.startsWith('55') && digits.length >= 12) {
-    // Já tem código do país
     countryCode = '55';
     localNumber = digits.substring(2);
-  } else if (digits.length >= 12) {
-    // Tem código de país diferente
-    return '+' + digits;
+  } else if (digits.length >= 12 && !digits.startsWith('55')) {
+    // País diferente do Brasil
+    return { valid: true, phone: '+' + digits, warning: 'Número internacional (não brasileiro)' };
   }
   
-  // Verifica se é número brasileiro (DDD + número)
-  if (countryCode === '55' && localNumber.length >= 10) {
+  // Valida número brasileiro
+  if (countryCode === '55') {
+    if (localNumber.length < 10) {
+      return { valid: false, phone: '', error: 'Número brasileiro incompleto' };
+    }
+    
     const ddd = localNumber.substring(0, 2);
     let numero = localNumber.substring(2);
     
-    // Verifica se é celular (começa com 6, 7, 8 ou 9)
+    // Valida DDD
+    if (!VALID_DDDS.includes(ddd)) {
+      return { valid: false, phone: '', error: `DDD inválido: ${ddd}` };
+    }
+    
+    // Verifica primeiro dígito do número
     const primeiroDigito = numero[0];
+    
+    // Rejeita telefones fixos (começam com 2, 3, 4, 5)
+    if (['2', '3', '4', '5'].includes(primeiroDigito)) {
+      return { valid: false, phone: '', error: 'Telefone fixo não permitido (apenas celulares)' };
+    }
+    
+    // Valida se é celular (começa com 6, 7, 8 ou 9)
     const isCelular = ['6', '7', '8', '9'].includes(primeiroDigito);
     
-    if (isCelular) {
-      // Celulares devem ter 9 dígitos e começar com 9
-      if (numero.length === 8) {
-        // Número sem o 9º dígito - adiciona o 9
-        numero = '9' + numero;
-      } else if (numero.length === 9 && !numero.startsWith('9')) {
-        // Tem 9 dígitos mas não começa com 9 - pode ser erro, mas vamos manter
-        // (alguns casos raros de números antigos)
+    if (!isCelular) {
+      return { valid: false, phone: '', error: `Número inválido: deve começar com 6, 7, 8 ou 9` };
+    }
+    
+    let warning: string | undefined;
+    
+    // Celulares devem ter 9 dígitos e começar com 9
+    if (numero.length === 8) {
+      // Número sem o 9º dígito - adiciona o 9
+      numero = '9' + numero;
+      warning = '9º dígito adicionado automaticamente';
+    } else if (numero.length === 9) {
+      // Valida se começa com 9
+      if (!numero.startsWith('9')) {
+        return { valid: false, phone: '', error: 'Celular deve começar com 9' };
       }
+    } else if (numero.length !== 9) {
+      return { valid: false, phone: '', error: `Número com tamanho incorreto: ${numero.length} dígitos` };
     }
     
     // Monta o número final
-    return '+' + countryCode + ddd + numero;
+    const normalizedPhone = '+' + countryCode + ddd + numero;
+    return { valid: true, phone: normalizedPhone, warning };
   }
   
-  // Casos que não se encaixam nas regras acima
-  if (localNumber.length >= 10) {
-    return '+' + countryCode + localNumber;
-  }
-  
-  return '+' + digits;
+  // Outros casos
+  return { valid: false, phone: '', error: 'Formato não reconhecido' };
+}
+
+/**
+ * Normaliza número de telefone brasileiro, adicionando o 9º dígito em celulares quando necessário.
+ * Todos os celulares brasileiros devem ter 9 dígitos e começar com 9.
+ * 
+ * @param phone - Número de telefone em qualquer formato
+ * @param defaultCountry - Código do país padrão (55 para Brasil)
+ * @returns Número normalizado no formato E.164 (+5511999999999) ou string vazia se inválido
+ */
+export function normalizeBrazilianPhone(phone: string, defaultCountry: string = '55'): string {
+  const result = validateAndNormalizeBrazilianPhone(phone, defaultCountry);
+  return result.valid ? result.phone : '';
 }
 
 export function formatPhoneLocal(phone: string): string {
