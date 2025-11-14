@@ -4,7 +4,7 @@ import { SectionTitle } from '@/components/SectionTitle';
 import { Field } from '@/components/Field';
 import { SmallBtn } from '@/components/SmallBtn';
 import { EmojiTextarea } from '@/components/EmojiTextarea';
-import { Pause, X, Download, Copy, Edit, Trash2, Play } from 'lucide-react';
+import { Pause, X, Download, Copy, Edit, Trash2, Play, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -249,6 +249,9 @@ const Index = () => {
   
   // Confirmações de exclusão
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; type: string; id?: string; callback?: () => void }>({ show: false, type: '' });
+  
+  // Confirmação de reenvio de pendentes
+  const [resendConfirm, setResendConfirm] = useState<{ show: boolean; queueId: string | number | null; queueName: string }>({ show: false, queueId: null, queueName: '' });
   
   // Handler para download de contatos
   const handleDownloadContacts = (format: 'csv' | 'xls' | 'xlsx') => {
@@ -2098,6 +2101,138 @@ const Index = () => {
     }
   }
 
+  async function handleResendPending(queueId: string | number) {
+    try {
+      setStatus('Preparando reenvio...');
+      
+      const data = await queueGetOne(queueId);
+      if (!data) {
+        setStatus('Erro: Campanha não encontrada.');
+        return;
+      }
+      
+      // Buscar logs da campanha
+      const logsData = await logsListForRun(data.run_id);
+      const logs = Array.isArray(logsData?.list) ? logsData.list : [];
+      
+      // Identificar números enviados com sucesso
+      const successNumbers = new Set<string>();
+      const errorNumbers = new Set<string>();
+      
+      logs.forEach((log: any) => {
+        const numero = extractNumberFromLog(log);
+        if (!numero) return;
+        
+        const isSuccess = log.level === 'success' || log.level === 'info' || log.http_status === 200 || log.http_status === 201;
+        
+        if (isSuccess) {
+          successNumbers.add(stripDigits(numero));
+        } else {
+          errorNumbers.add(stripDigits(numero));
+        }
+      });
+      
+      // Carregar perfil se disponível
+      if (data.payload_json?.profile) {
+        const profile = profiles.find(p => 
+          p.evo_base_url === data.payload_json.profile.evo_base_url &&
+          p.evo_instance === data.payload_json.profile.evo_instance
+        );
+        if (profile) {
+          setSelectedProfileId(String(profile.Id));
+        }
+      }
+      
+      // Nome da campanha com " - Reenvio"
+      setCampaignName(data.name + ' - Reenvio');
+      setSchedule('');
+      
+      // Carregar contatos
+      const contactsList = data.payload_json?.contacts || [];
+      const allContacts: Contact[] = [];
+      const selectedIds: string[] = [];
+      
+      contactsList.forEach((c: any) => {
+        const phoneDigits = stripDigits(c.phone || '');
+        
+        // Remove completamente os que já foram enviados com sucesso
+        if (successNumbers.has(phoneDigits)) {
+          return; // Não adiciona na lista
+        }
+        
+        const newContact: Contact = {
+          id: uid(),
+          name: c.name || 'Sem nome',
+          phone: c.phone || '',
+          tags: c.tags || '',
+          srcImported: c.srcImported,
+          srcLabel: c.srcLabel,
+          srcGroup: c.srcGroup,
+          srcEmp: c.srcEmp
+        };
+        
+        allContacts.push(newContact);
+        
+        // Seleciona apenas os que NÃO deram erro (pendentes)
+        if (!errorNumbers.has(phoneDigits)) {
+          selectedIds.push(newContact.id);
+        }
+      });
+      
+      setContacts(allContacts);
+      setSelectedContacts(selectedIds);
+      
+      // Carregar blocos
+      const blocksList = data.payload_json?.blocks || [];
+      const importedBlocks: Block[] = blocksList.map((b: any) => ({
+        id: uid(),
+        type: b.type,
+        action: b.action || 'sendMessage',
+        data: b.data || {},
+        itemWait: b.itemWait || 0
+      }));
+      
+      setBlocks(importedBlocks);
+      
+      // Carregar delays
+      if (data.payload_json?.delays) {
+        setItemDelay(data.payload_json.delays.itemDelay || 3);
+        setItemVariance(data.payload_json.delays.itemVariance || 4);
+        setContactDelay(data.payload_json.delays.contactDelay || 10);
+        setContactVariance(data.payload_json.delays.contactVariance || 10);
+      }
+      
+      // Criar e executar imediatamente
+      setEditingQueueId(null);
+      setEditMode('none');
+      
+      // Mudar para aba de criar e enviar automaticamente
+      setCurrentTab('criar');
+      setTab('direct');
+      
+      // Fechar popup
+      setResendConfirm({ show: false, queueId: null, queueName: '' });
+      
+      // Aguardar um momento para o estado atualizar e enviar
+      setTimeout(() => {
+        handleSend();
+      }, 500);
+      
+      const stats = {
+        total: contactsList.length,
+        removidos: successNumbers.size,
+        pendentes: selectedIds.length,
+        comErro: allContacts.length - selectedIds.length
+      };
+      
+      setStatus(`✅ Reenvio preparado: ${stats.pendentes} pendentes selecionados, ${stats.comErro} com erro desmarcados, ${stats.removidos} sucessos removidos`);
+    } catch (e: any) {
+      console.error('[handleResendPending] Erro:', e);
+      setStatus(`❌ Erro ao preparar reenvio: ${e.message}`);
+      setResendConfirm({ show: false, queueId: null, queueName: '' });
+    }
+  }
+
   async function handleEditQueue(queueId: string | number) {
     try {
       const data = await queueGetOne(queueId);
@@ -3118,7 +3253,16 @@ const Index = () => {
                         return (
                           <tr key={q.Id} className="border-t border-border hover:bg-muted/50">
                             <td className="px-4 py-2 text-sm font-mono">{q.Id}</td>
-                            <td className="px-4 py-2 text-sm font-medium">{q.name}</td>
+                            <td className="px-4 py-2 text-sm font-medium">
+                              {q.name.includes(' - Reenvio') ? (
+                                <>
+                                  {q.name.split(' - Reenvio')[0]}
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold"> - Reenvio</span>
+                                </>
+                              ) : (
+                                q.name
+                              )}
+                            </td>
                             <td className="px-4 py-2">
                               <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                                 (q.status === 'completed' || q.status === 'done') ? 'badge-done' :
@@ -3198,6 +3342,17 @@ const Index = () => {
                                 >
                                   <Download className="h-4 w-4" />
                                 </Button>
+                                {(q.status === 'failed' || q.status === 'erro') && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+                                    onClick={() => setResendConfirm({ show: true, queueId: q.Id, queueName: q.name })}
+                                    title="Reenviar Pendentes"
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -3337,6 +3492,35 @@ const Index = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Confirmar exclusão
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog para confirmação de reenvio de pendentes */}
+      <AlertDialog open={resendConfirm.show} onOpenChange={(open) => !open && setResendConfirm({ show: false, queueId: null, queueName: '' })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reenviar Pendentes</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>Será criada uma nova campanha para reenviar os contatos pendentes:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li><strong>Removidos:</strong> Contatos já enviados com sucesso</li>
+                <li><strong>Selecionados:</strong> Contatos ainda não tentados (pendentes)</li>
+                <li><strong>Desmarcados:</strong> Contatos que deram erro (ficam visíveis mas não serão reenviados)</li>
+              </ul>
+              <p className="text-sm font-medium mt-3">A campanha será iniciada imediatamente após a confirmação.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setResendConfirm({ show: false, queueId: null, queueName: '' })}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => resendConfirm.queueId && handleResendPending(resendConfirm.queueId)}
+              className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+            >
+              Confirmar Reenvio
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
