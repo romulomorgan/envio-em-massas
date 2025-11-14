@@ -2173,21 +2173,31 @@ const Index = () => {
           return; // Não adiciona na lista
         }
         
+        // VALIDA o número (aplicando todas as regras)
+        const validation = validateAndNormalizeBrazilianPhone(c.phone || '', defaultCountryCode);
+        
         const newContact: Contact = {
           id: uid(),
           name: c.name || 'Sem nome',
-          phone: c.phone || '',
+          phone: validation.valid ? validation.phone : c.phone, // Usa validado se válido
           tags: c.tags || '',
           srcImported: c.srcImported,
           srcLabel: c.srcLabel,
           srcGroup: c.srcGroup,
-          srcEmp: c.srcEmp
+          srcEmp: c.srcEmp,
+          validationError: validation.valid ? undefined : validation.error,
+          validationWarning: validation.valid ? validation.warning : undefined
         };
         
         allContacts.push(newContact);
         
-        // Seleciona apenas os que NÃO deram erro (pendentes)
-        if (!errorNumbers.has(phoneDigits)) {
+        // Seleciona APENAS se:
+        // 1. Número é VÁLIDO (passou na validação)
+        // 2. NÃO deu erro no envio anterior
+        const isValid = validation.valid;
+        const hadSendError = errorNumbers.has(phoneDigits);
+        
+        if (isValid && !hadSendError) {
           selectedIds.push(newContact.id);
         }
       });
