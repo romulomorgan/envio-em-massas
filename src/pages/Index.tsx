@@ -2143,8 +2143,21 @@ const Index = () => {
         }
       }
       
-      // Nome da campanha com " - Reenvio"
-      setCampaignName(data.name + ' - Reenvio');
+      // Nome da campanha com numeração automática de reenvio
+      let newCampaignName = data.name;
+      const reenvioMatch = data.name.match(/^(.+?)\s*-\s*Reenvio\s+(\d+)$/i);
+      
+      if (reenvioMatch) {
+        // Já é um reenvio, incrementa o número
+        const baseName = reenvioMatch[1];
+        const currentNumber = parseInt(reenvioMatch[2], 10);
+        newCampaignName = `${baseName} - Reenvio ${currentNumber + 1}`;
+      } else {
+        // Primeira vez que está sendo reenviado
+        newCampaignName = `${data.name} - Reenvio 1`;
+      }
+      
+      setCampaignName(newCampaignName);
       setSchedule('');
       
       // Carregar contatos
@@ -3254,14 +3267,18 @@ const Index = () => {
                           <tr key={q.Id} className="border-t border-border hover:bg-muted/50">
                             <td className="px-4 py-2 text-sm font-mono">{q.Id}</td>
                             <td className="px-4 py-2 text-sm font-medium">
-                              {q.name.includes(' - Reenvio') ? (
-                                <>
-                                  {q.name.split(' - Reenvio')[0]}
-                                  <span className="text-blue-600 dark:text-blue-400 font-semibold"> - Reenvio</span>
-                                </>
-                              ) : (
-                                q.name
-                              )}
+                              {(() => {
+                                const reenvioMatch = q.name.match(/^(.+?)\s*-\s*Reenvio\s+(\d+)$/i);
+                                if (reenvioMatch) {
+                                  return (
+                                    <>
+                                      {reenvioMatch[1]}
+                                      <span className="text-blue-600 dark:text-blue-400 font-semibold"> - Reenvio {reenvioMatch[2]}</span>
+                                    </>
+                                  );
+                                }
+                                return q.name;
+                              })()}
                             </td>
                             <td className="px-4 py-2">
                               <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
