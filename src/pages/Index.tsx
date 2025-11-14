@@ -1041,8 +1041,9 @@ const Index = () => {
       const rows: any[] = XLSX.utils.sheet_to_json(ws);
       
       const imported: Contact[] = [];
-      const corrected: string[] = [];
-      const rejected: { phone: string; reason: string }[] = [];
+      const validContacts: string[] = [];
+      const invalidContacts: string[] = [];
+      const correctedContacts: string[] = [];
       const duplicates = new Set<string>();
       const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
       
@@ -1051,14 +1052,35 @@ const Index = () => {
         const phoneRaw = String(row['Telefone'] || row['telefone'] || row['Phone'] || row['phone'] || '').trim();
         const tagsRaw = String(row['Tags'] || row['tags'] || row['Etiquetas'] || row['etiquetas'] || '').trim();
         
+        // Tratamento de números vazios
         if (!phoneRaw || phoneRaw === '-') {
-          rejected.push({ phone: phoneRaw || '(vazio)', reason: 'Número vazio ou inválido' });
+          const contact: Contact = {
+            id: uid(),
+            name: name || 'Sem nome',
+            phone: phoneRaw || '(vazio)',
+            tags: tagsRaw || 'IMPORTADOS',
+            srcImported: true,
+            validationError: 'Número vazio ou inválido'
+          };
+          imported.push(contact);
+          invalidContacts.push(contact.id);
           continue;
         }
         
         const digits = stripDigits(phoneRaw);
+        
+        // Tratamento de números sem dígitos
         if (!digits) {
-          rejected.push({ phone: phoneRaw, reason: 'Sem dígitos válidos' });
+          const contact: Contact = {
+            id: uid(),
+            name: name || 'Sem nome',
+            phone: phoneRaw,
+            tags: tagsRaw || 'IMPORTADOS',
+            srcImported: true,
+            validationError: 'Sem dígitos válidos'
+          };
+          imported.push(contact);
+          invalidContacts.push(contact.id);
           continue;
         }
         
@@ -1072,22 +1094,36 @@ const Index = () => {
         const validation = validateAndNormalizeBrazilianPhone(phoneRaw, defaultCountryCode);
         
         if (!validation.valid) {
-          rejected.push({ phone: phoneRaw, reason: validation.error || 'Número inválido' });
+          // Número inválido - adiciona mas não seleciona
+          const contact: Contact = {
+            id: uid(),
+            name: name || 'Sem nome',
+            phone: phoneRaw,
+            tags: tagsRaw || 'IMPORTADOS',
+            srcImported: true,
+            validationError: validation.error
+          };
+          imported.push(contact);
+          invalidContacts.push(contact.id);
+          existingPhones.add(digits);
           continue;
         }
         
-        // Adiciona à lista
-        imported.push({
+        // Número válido - adiciona e seleciona
+        const contact: Contact = {
           id: uid(),
           name: name || 'Sem nome',
           phone: validation.phone,
           tags: tagsRaw || 'IMPORTADOS',
-          srcImported: true
-        });
+          srcImported: true,
+          validationWarning: validation.warning
+        };
         
-        // Registra se foi corrigido
+        imported.push(contact);
+        validContacts.push(contact.id);
+        
         if (validation.warning) {
-          corrected.push(phoneRaw);
+          correctedContacts.push(contact.id);
         }
         
         existingPhones.add(digits);
@@ -1096,34 +1132,51 @@ const Index = () => {
       // Monta mensagem detalhada
       const messages: string[] = [];
       
-      if (imported.length > 0) {
-        messages.push(`✅ ${imported.length} contato(s) importado(s)`);
+      if (validContacts.length > 0) {
+        messages.push(`✅ ${validContacts.length} válido(s)`);
       }
       
-      if (corrected.length > 0) {
-        messages.push(`🔧 ${corrected.length} número(s) corrigido(s) automaticamente`);
+      if (correctedContacts.length > 0) {
+        messages.push(`🔧 ${correctedContacts.length} corrigido(s)`);
+      }
+      
+      if (invalidContacts.length > 0) {
+        messages.push(`⚠️ ${invalidContacts.length} inválido(s) (desmarcados)`);
       }
       
       if (duplicates.size > 0) {
-        messages.push(`⚠️ ${duplicates.size} duplicado(s) ignorado(s)`);
-      }
-      
-      if (rejected.length > 0) {
-        messages.push(`❌ ${rejected.length} número(s) rejeitado(s)`);
-        console.group('📋 Números Rejeitados na Importação:');
-        rejected.forEach(({ phone, reason }) => {
-          console.log(`❌ ${phone} → ${reason}`);
-        });
-        console.groupEnd();
+        messages.push(`🔄 ${duplicates.size} duplicado(s) ignorado(s)`);
       }
       
       if (imported.length === 0) {
-        setStatus(messages.join(' | ') || '⚠️ Nenhum contato válido encontrado no arquivo.');
+        setStatus('⚠️ Nenhum contato encontrado no arquivo.');
         return;
       }
       
+      // Log detalhado no console
+      if (invalidContacts.length > 0) {
+        console.group('⚠️ Contatos Inválidos (não selecionados):');
+        imported
+          .filter(c => c.validationError)
+          .forEach(c => {
+            console.log(`❌ ${c.phone} → ${c.validationError}`);
+          });
+        console.groupEnd();
+      }
+      
+      if (correctedContacts.length > 0) {
+        console.group('🔧 Números Corrigidos Automaticamente:');
+        imported
+          .filter(c => c.validationWarning)
+          .forEach(c => {
+            console.log(`✅ ${c.phone} → ${c.validationWarning}`);
+          });
+        console.groupEnd();
+      }
+      
       setContacts(prev => [...prev, ...imported]);
-      setSelectedContacts(prev => [...prev, ...imported.map(c => c.id)]);
+      // Seleciona apenas os contatos válidos
+      setSelectedContacts(prev => [...prev, ...validContacts]);
       setStatus(messages.join(' | '));
     } catch (e: any) {
       setStatus(`❌ Erro ao importar: ${e.message}`);
@@ -2581,12 +2634,19 @@ const Index = () => {
                             <th className="px-4 py-2 text-left text-sm font-medium">Nome</th>
                             <th className="px-4 py-2 text-left text-sm font-medium">Telefone</th>
                             <th className="px-4 py-2 text-left text-sm font-medium">Tags</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium">Status</th>
                             <th className="px-4 py-2 text-left text-sm font-medium">Ações</th>
                           </tr>
                         </thead>
                         <tbody>
                           {visibleContacts.map((contact) => (
-                            <tr key={contact.id} className="border-t border-border hover:bg-muted/50">
+                            <tr 
+                              key={contact.id} 
+                              className={`border-t border-border hover:bg-muted/50 ${
+                                contact.validationError ? 'bg-destructive/5' : 
+                                contact.validationWarning ? 'bg-yellow-500/5' : ''
+                              }`}
+                            >
                               <td className="px-4 py-2">
                                 <input
                                   type="checkbox"
@@ -2595,18 +2655,33 @@ const Index = () => {
                                 />
                               </td>
                               <td className="px-4 py-2 text-sm">{contact.name}</td>
-                              <td className="px-4 py-2 text-sm font-mono">{formatPhoneLocal(contact.phone)}</td>
+                              <td className="px-4 py-2 text-sm font-mono">
+                                {formatPhoneLocal(contact.phone)}
+                              </td>
                               <td className="px-4 py-2 text-sm text-muted-foreground">{contact.tags || '-'}</td>
-                               <td className="px-4 py-2">
-                                 <Button
-                                   size="sm"
-                                   variant="ghost"
-                                   className="text-destructive hover:text-destructive"
-                                   onClick={() => removeContact(contact.id)}
-                                 >
-                                   <X className="h-4 w-4" />
-                                 </Button>
-                               </td>
+                              <td className="px-4 py-2 text-sm">
+                                {contact.validationError ? (
+                                  <span className="text-destructive text-xs" title={contact.validationError}>
+                                    ❌ {contact.validationError}
+                                  </span>
+                                ) : contact.validationWarning ? (
+                                  <span className="text-yellow-600 dark:text-yellow-500 text-xs" title={contact.validationWarning}>
+                                    ⚠️ {contact.validationWarning}
+                                  </span>
+                                ) : (
+                                  <span className="text-green-600 dark:text-green-500 text-xs">✅ Válido</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-destructive hover:text-destructive"
+                                  onClick={() => removeContact(contact.id)}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </td>
                             </tr>
                           ))}
                           {!visibleContacts.length && (
