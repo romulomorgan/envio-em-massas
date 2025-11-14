@@ -2192,12 +2192,12 @@ const Index = () => {
         
         allContacts.push(newContact);
         
-        // Seleciona TODOS os números VÁLIDOS (incluindo os que deram erro antes)
-        // A ideia do "Reenviar Pendentes" é tentar novamente até conseguir entregar
-        // Apenas números com erro de VALIDAÇÃO ficam desmarcados
+        // Seleciona APENAS números VÁLIDOS que NÃO falharam no envio anterior
+        // Regra: pendentes válidos = selecionados; erros anteriores = desmarcados; inválidos = desmarcados
         const isValid = validation.valid;
+        const inError = errorNumbers.has(phoneDigits);
         
-        if (isValid) {
+        if (isValid && !inError) {
           selectedIds.push(newContact.id);
         }
       });
@@ -2248,7 +2248,7 @@ const Index = () => {
         comErro: allContacts.length - selectedIds.length
       };
       
-      setStatus(`✅ Reenvio preparado: ${stats.pendentes} pendentes selecionados, ${stats.comErro} com erro desmarcados, ${stats.removidos} sucessos removidos`);
+      setStatus(`✅ Reenvio preparado: ${stats.pendentes} selecionados, ${stats.comErro} desmarcados, ${stats.removidos} sucessos removidos`);
     } catch (e: any) {
       console.error('[handleResendPending] Erro:', e);
       setStatus(`❌ Erro ao preparar reenvio: ${e.message}`);
@@ -3533,8 +3533,8 @@ const Index = () => {
               <p>Será criada uma nova campanha para reenviar os contatos pendentes:</p>
               <ul className="list-disc list-inside space-y-1 text-sm">
                 <li><strong>Removidos:</strong> Contatos já enviados com sucesso</li>
-                <li><strong>Selecionados:</strong> Todos os contatos válidos restantes (incluindo os que deram erro)</li>
-                <li><strong>Desmarcados:</strong> Apenas contatos com número inválido</li>
+                <li><strong>Selecionados:</strong> Contatos válidos pendentes (sem erro anterior)</li>
+                <li><strong>Desmarcados:</strong> Contatos que falharam no envio anterior e números inválidos</li>
               </ul>
               <p className="text-sm font-medium mt-3">A campanha será iniciada imediatamente após a confirmação.</p>
             </AlertDialogDescription>
