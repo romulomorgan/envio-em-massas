@@ -1805,10 +1805,10 @@ const Index = () => {
         randomize: true,
         seed: runId,
         delays: {
-          itemDelay: selectedProfile.item_delay || itemDelay,
-          itemVariance: selectedProfile.item_variance || itemVariance,
-          contactDelay: selectedProfile.contact_delay || contactDelay,
-          contactVariance: selectedProfile.contact_variance || contactVariance
+          itemDelay: itemDelay,
+          itemVariance: itemVariance,
+          contactDelay: contactDelay,
+          contactVariance: contactVariance
         },
         profile: {
           evo_base_url: selectedProfile.evo_base_url,
