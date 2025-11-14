@@ -7,6 +7,8 @@ export interface Contact {
   srcLabel?: boolean;
   srcEmp?: boolean;
   srcGroup?: boolean;
+  validationError?: string;
+  validationWarning?: string;
 }
 
 export interface Label {
