@@ -26,6 +26,7 @@ import {
   uid,
   stripDigits,
   ensureE164,
+  normalizeBrazilianPhone,
   formatPhoneLocal,
   getSafeContext,
   normalizeOrigin,
@@ -1057,7 +1058,8 @@ const Index = () => {
             continue;
           }
           
-          const phone = ensureE164(digits, defaultCountryCode);
+          // Normaliza o número brasileiro (adiciona 9º dígito se necessário)
+          const phone = normalizeBrazilianPhone(phoneRaw, defaultCountryCode);
           if (!phone) continue;
           
           imported.push({
