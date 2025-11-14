@@ -612,7 +612,8 @@ async function processQueueItem(q){
 
   let okCount=0, errCount=0, processedContacts= q.progress_contact_ix || 0;
 
-  for(let ci=0; ci<normalized.length; ci++){
+  // IMPORTANTE: Começa do contato onde parou (progress_contact_ix) ao invés de sempre começar do zero
+  for(let ci=processedContacts; ci<normalized.length; ci++){
     const contact = normalized[ci];
 
     const fresh = await queueGetOne(id).catch(()=>q);
