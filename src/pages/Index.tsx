@@ -27,6 +27,7 @@ import {
   stripDigits,
   ensureE164,
   normalizeBrazilianPhone,
+  validateAndNormalizeBrazilianPhone,
   formatPhoneLocal,
   getSafeContext,
   normalizeOrigin,
@@ -1040,6 +1041,8 @@ const Index = () => {
       const rows: any[] = XLSX.utils.sheet_to_json(ws);
       
       const imported: Contact[] = [];
+      const corrected: string[] = [];
+      const rejected: { phone: string; reason: string }[] = [];
       const duplicates = new Set<string>();
       const existingPhones = new Set(contacts.map(c => stripDigits(c.phone)));
       
@@ -1048,46 +1051,80 @@ const Index = () => {
         const phoneRaw = String(row['Telefone'] || row['telefone'] || row['Phone'] || row['phone'] || '').trim();
         const tagsRaw = String(row['Tags'] || row['tags'] || row['Etiquetas'] || row['etiquetas'] || '').trim();
         
-        if (phoneRaw) {
-          const digits = stripDigits(phoneRaw);
-          if (!digits) continue;
-          
-          // Verifica duplicação
-          if (existingPhones.has(digits)) {
-            duplicates.add(digits);
-            continue;
-          }
-          
-          // Normaliza o número brasileiro (adiciona 9º dígito se necessário)
-          const phone = normalizeBrazilianPhone(phoneRaw, defaultCountryCode);
-          if (!phone) continue;
-          
-          imported.push({
-            id: uid(),
-            name: name || 'Sem nome',
-            phone,
-            tags: tagsRaw || 'IMPORTADOS',
-            srcImported: true
-          });
-          
-          existingPhones.add(digits);
+        if (!phoneRaw || phoneRaw === '-') {
+          rejected.push({ phone: phoneRaw || '(vazio)', reason: 'Número vazio ou inválido' });
+          continue;
         }
+        
+        const digits = stripDigits(phoneRaw);
+        if (!digits) {
+          rejected.push({ phone: phoneRaw, reason: 'Sem dígitos válidos' });
+          continue;
+        }
+        
+        // Verifica duplicação
+        if (existingPhones.has(digits)) {
+          duplicates.add(phoneRaw);
+          continue;
+        }
+        
+        // Valida e normaliza o número brasileiro
+        const validation = validateAndNormalizeBrazilianPhone(phoneRaw, defaultCountryCode);
+        
+        if (!validation.valid) {
+          rejected.push({ phone: phoneRaw, reason: validation.error || 'Número inválido' });
+          continue;
+        }
+        
+        // Adiciona à lista
+        imported.push({
+          id: uid(),
+          name: name || 'Sem nome',
+          phone: validation.phone,
+          tags: tagsRaw || 'IMPORTADOS',
+          srcImported: true
+        });
+        
+        // Registra se foi corrigido
+        if (validation.warning) {
+          corrected.push(phoneRaw);
+        }
+        
+        existingPhones.add(digits);
+      }
+      
+      // Monta mensagem detalhada
+      const messages: string[] = [];
+      
+      if (imported.length > 0) {
+        messages.push(`✅ ${imported.length} contato(s) importado(s)`);
+      }
+      
+      if (corrected.length > 0) {
+        messages.push(`🔧 ${corrected.length} número(s) corrigido(s) automaticamente`);
+      }
+      
+      if (duplicates.size > 0) {
+        messages.push(`⚠️ ${duplicates.size} duplicado(s) ignorado(s)`);
+      }
+      
+      if (rejected.length > 0) {
+        messages.push(`❌ ${rejected.length} número(s) rejeitado(s)`);
+        console.group('📋 Números Rejeitados na Importação:');
+        rejected.forEach(({ phone, reason }) => {
+          console.log(`❌ ${phone} → ${reason}`);
+        });
+        console.groupEnd();
       }
       
       if (imported.length === 0) {
-        setStatus(duplicates.size > 0 
-          ? `⚠️ Nenhum contato novo. ${duplicates.size} duplicado(s) ignorado(s).`
-          : '⚠️ Nenhum contato válido encontrado no arquivo.'
-        );
+        setStatus(messages.join(' | ') || '⚠️ Nenhum contato válido encontrado no arquivo.');
         return;
       }
       
       setContacts(prev => [...prev, ...imported]);
       setSelectedContacts(prev => [...prev, ...imported.map(c => c.id)]);
-      setStatus(duplicates.size > 0
-        ? `✅ Importados ${imported.length} contato(s). ${duplicates.size} duplicado(s) ignorado(s).`
-        : `✅ Importados ${imported.length} contato(s).`
-      );
+      setStatus(messages.join(' | '));
     } catch (e: any) {
       setStatus(`❌ Erro ao importar: ${e.message}`);
     }
