@@ -2192,13 +2192,12 @@ const Index = () => {
         
         allContacts.push(newContact);
         
-        // Seleciona APENAS se:
-        // 1. Número é VÁLIDO (passou na validação)
-        // 2. NÃO deu erro no envio anterior
+        // Seleciona TODOS os números VÁLIDOS (incluindo os que deram erro antes)
+        // A ideia do "Reenviar Pendentes" é tentar novamente até conseguir entregar
+        // Apenas números com erro de VALIDAÇÃO ficam desmarcados
         const isValid = validation.valid;
-        const hadSendError = errorNumbers.has(phoneDigits);
         
-        if (isValid && !hadSendError) {
+        if (isValid) {
           selectedIds.push(newContact.id);
         }
       });
@@ -3534,8 +3533,8 @@ const Index = () => {
               <p>Será criada uma nova campanha para reenviar os contatos pendentes:</p>
               <ul className="list-disc list-inside space-y-1 text-sm">
                 <li><strong>Removidos:</strong> Contatos já enviados com sucesso</li>
-                <li><strong>Selecionados:</strong> Contatos ainda não tentados (pendentes)</li>
-                <li><strong>Desmarcados:</strong> Contatos que deram erro (ficam visíveis mas não serão reenviados)</li>
+                <li><strong>Selecionados:</strong> Todos os contatos válidos restantes (incluindo os que deram erro)</li>
+                <li><strong>Desmarcados:</strong> Apenas contatos com número inválido</li>
               </ul>
               <p className="text-sm font-medium mt-3">A campanha será iniciada imediatamente após a confirmação.</p>
             </AlertDialogDescription>
