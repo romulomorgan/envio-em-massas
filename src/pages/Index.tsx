@@ -1964,7 +1964,7 @@ const Index = () => {
 
   async function handlePauseQueue(queueId: string | number) {
     try {
-      await queuePatch(queueId, { is_paused: true });
+      await queuePatch(queueId, { is_paused: true, status: 'paused' });
       setStatus('Campanha pausada.');
       loadMonitor();
     } catch (e: any) {
@@ -1974,8 +1974,9 @@ const Index = () => {
 
   async function handleResumeQueue(queueId: string | number) {
     try {
-      await queuePatch(queueId, { is_paused: false });
-      setStatus('Campanha retomada.');
+      // Volta para 'queued' para o worker pegar novamente e continuar de onde parou
+      await queuePatch(queueId, { is_paused: false, status: 'queued' });
+      setStatus('Campanha retomada. Ela continuará de onde parou.');
       loadMonitor();
     } catch (e: any) {
       setStatus(`Erro: ${e.message}`);
