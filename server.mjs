@@ -616,105 +616,121 @@ async function processQueueItem(q){
   for(let ci=processedContacts; ci<normalized.length; ci++){
     const contact = normalized[ci];
 
-    const fresh = await queueGetOne(id).catch(()=>q);
-    if(fresh?.is_paused || String((fresh?.status||'').toLowerCase())==='paused'){
-      log('warn', `#${id} pausado durante execução.`);
-      await queuePatch(id, { status:'paused', is_paused:true });
-      return;
-    }
-    if(String((fresh?.status||'').toLowerCase())==='canceled'){
-      log('warn', `#${id} cancelado.`);
-      await queuePatch(id, { status:'canceled' });
-      return;
-    }
-
-    if(skipSet.has(contact.phone)){
-      log('debug', `#${id} pulando ${contact.phone} (skipNumbers)`);
-      processedContacts++;
-      await queuePatch(id, { progress_contact_ix: processedContacts });
-      continue;
-    }
-
-    for(let bi=0; bi<blocks.length; bi++){
-      const blk = blocks[bi];
-      const waitThis = Number(blk.itemWait ?? jitter(delays.itemDelay||0, delays.itemVariance||0));
-      try{
-        // monta payload bruto (robusto a type/action)
-        const tmp   = buildPayloadForBlock(blk, contact.phone, contact.name);
-        const action= tmp.action;
-
-        // ======= APLICAÇÃO FINAL DE TOKENS =======
-        let body = applyTokensDeep(tmp.body, contact.name);
-
-        // se ainda restou algum {{token}}, tenta forçar mais uma passada
-        const hasRaw = JSON.stringify(body).match(/\{\{?\s*(nome|data)\s*\}?\}/i);
-        if (hasRaw) body = applyTokensDeep(body, contact.name);
-
-        // ======= DEDUPE GUARD =======
-        const numPlain = asEvolutionNumber(contact.phone);
-        const gkey = makeGuardKey(id, numPlain, bi, action, body);
-        if (wasRecentlySent(gkey)) {
-          log('warn', `#${id} guard: conteúdo duplicado p/ ${numPlain} bi=${bi} — pulando envio.`);
-        await logsCreate({
-          queue_id: id,
-          run_id: q.run_id || null,
-          contact: contact.name || null,
-          number: numPlain,
-          http_status: 0,
-          level: 'info',
-          block_index: bi,
-          message_json: truncateJSON({ guarded:true, reason:'duplicate_recent', action, body })
-        });
-          continue;
-        }
-
-        log('debug', `#${id} -> ${contact.phone} :: ${action} bi=${bi}`);
-
-        const resp = await evoRequest(profile, action, body);
-        const http = resp.status||0;
-        const ok = resp.ok;
-
-        await logsCreate({
-          queue_id: id,
-          run_id: q.run_id || null,
-          contact: contact.name || null,
-          number: numPlain,
-          http_status: http,
-          level: ok ? 'info' : 'error',
-          block_index: bi,
-          message_json: truncateJSON({
-            action, body, response: resp.data, status:http,
-            used_connection: resp._usedConnection ? {
-              base: resp._usedConnection.base,
-              instance: resp._usedConnection.instance
-            } : null
-          })
-        });
-
-        if(ok) okCount++; else errCount++;
-
-      }catch(e){
-        errCount++;
-        await logsCreate({
-          queue_id: id,
-          run_id: q.run_id || null,
-          contact: contact.name || null,
-          number: asEvolutionNumber(contact.phone),
-          http_status: 0,
-          level: 'error',
-          block_index: bi,
-          message_json: truncateJSON({ error: String(e&&e.message||e) })
-        });
+    // Envolve TODO o processamento do contato em try-catch para erros não derrubarem a campanha
+    try {
+      const fresh = await queueGetOne(id).catch(()=>q);
+      if(fresh?.is_paused || String((fresh?.status||'').toLowerCase())==='paused'){
+        log('warn', `#${id} pausado durante execução.`);
+        await queuePatch(id, { status:'paused', is_paused:true });
+        return;
+      }
+      if(String((fresh?.status||'').toLowerCase())==='canceled'){
+        log('warn', `#${id} cancelado.`);
+        await queuePatch(id, { status:'canceled' });
+        return;
       }
 
-      if(waitThis>0) await sleep(waitThis*1000);
+      if(skipSet.has(contact.phone)){
+        log('debug', `#${id} pulando ${contact.phone} (skipNumbers)`);
+        processedContacts++;
+        try{ await queuePatch(id, { progress_contact_ix: processedContacts }); }catch(_){}
+        continue;
+      }
+
+      for(let bi=0; bi<blocks.length; bi++){
+        const blk = blocks[bi];
+        const waitThis = Number(blk.itemWait ?? jitter(delays.itemDelay||0, delays.itemVariance||0));
+        try{
+          // monta payload bruto (robusto a type/action)
+          const tmp   = buildPayloadForBlock(blk, contact.phone, contact.name);
+          const action= tmp.action;
+
+          // ======= APLICAÇÃO FINAL DE TOKENS =======
+          let body = applyTokensDeep(tmp.body, contact.name);
+
+          // se ainda restou algum {{token}}, tenta forçar mais uma passada
+          const hasRaw = JSON.stringify(body).match(/\{\{?\s*(nome|data)\s*\}?\}/i);
+          if (hasRaw) body = applyTokensDeep(body, contact.name);
+
+          // ======= DEDUPE GUARD =======
+          const numPlain = asEvolutionNumber(contact.phone);
+          const gkey = makeGuardKey(id, numPlain, bi, action, body);
+          if (wasRecentlySent(gkey)) {
+            log('warn', `#${id} guard: conteúdo duplicado p/ ${numPlain} bi=${bi} — pulando envio.`);
+          try{
+            await logsCreate({
+              queue_id: id,
+              run_id: q.run_id || null,
+              contact: contact.name || null,
+              number: numPlain,
+              http_status: 0,
+              level: 'info',
+              block_index: bi,
+              message_json: truncateJSON({ guarded:true, reason:'duplicate_recent', action, body })
+            });
+          }catch(logErr){ log('error', `Falha ao criar log (guard): ${logErr.message}`); }
+            continue;
+          }
+
+          log('debug', `#${id} -> ${contact.phone} :: ${action} bi=${bi}`);
+
+          const resp = await evoRequest(profile, action, body);
+          const http = resp.status||0;
+          const ok = resp.ok;
+
+          try{
+            await logsCreate({
+              queue_id: id,
+              run_id: q.run_id || null,
+              contact: contact.name || null,
+              number: numPlain,
+              http_status: http,
+              level: ok ? 'info' : 'error',
+              block_index: bi,
+              message_json: truncateJSON({
+                action, body, response: resp.data, status:http,
+                used_connection: resp._usedConnection ? {
+                  base: resp._usedConnection.base,
+                  instance: resp._usedConnection.instance
+                } : null
+              })
+            });
+          }catch(logErr){ log('error', `Falha ao criar log: ${logErr.message}`); }
+
+          if(ok) okCount++; else errCount++;
+
+        }catch(e){
+          errCount++;
+          try{
+            await logsCreate({
+              queue_id: id,
+              run_id: q.run_id || null,
+              contact: contact.name || null,
+              number: asEvolutionNumber(contact.phone),
+              http_status: 0,
+              level: 'error',
+              block_index: bi,
+              message_json: truncateJSON({ error: String(e&&e.message||e) })
+            });
+          }catch(logErr){ log('error', `Falha ao criar log de erro: ${logErr.message}`); }
+        }
+
+        if(waitThis>0) await sleep(waitThis*1000);
+      }
+
+      processedContacts++;
+      try{ await queuePatch(id, { progress_contact_ix: processedContacts }); }catch(_){}
+
+      const waitContact = jitter(delays.contactDelay||0, delays.contactVariance||0);
+      if(waitContact>0) await sleep(waitContact*1000);
+      
+    } catch(contactError) {
+      // Se houver QUALQUER erro ao processar este contato, registra mas CONTINUA para o próximo
+      log('error', `#${id} Erro ao processar contato ${contact.phone}: ${contactError.message}`);
+      errCount++;
+      processedContacts++;
+      try{ await queuePatch(id, { progress_contact_ix: processedContacts }); }catch(_){}
     }
-
-    processedContacts++;
-    await queuePatch(id, { progress_contact_ix: processedContacts });
-
-    const waitContact = jitter(delays.contactDelay||0, delays.contactVariance||0);
-    if(waitContact>0) await sleep(waitContact*1000);
   }
 
   const finalStatus = (okCount>0 || normalized.length===0) ? 'done' : 'failed';
