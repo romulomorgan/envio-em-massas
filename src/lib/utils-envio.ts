@@ -17,6 +17,69 @@ export function ensureE164(phone: string, defaultCountry: string = '55'): string
   return '+' + digits;
 }
 
+/**
+ * Normaliza número de telefone brasileiro, adicionando o 9º dígito em celulares quando necessário.
+ * Todos os celulares brasileiros devem ter 9 dígitos e começar com 9.
+ * 
+ * @param phone - Número de telefone em qualquer formato
+ * @param defaultCountry - Código do país padrão (55 para Brasil)
+ * @returns Número normalizado no formato E.164 (+5511999999999)
+ */
+export function normalizeBrazilianPhone(phone: string, defaultCountry: string = '55'): string {
+  // Remove todos os caracteres não numéricos
+  let digits = stripDigits(phone);
+  if (!digits) return '';
+  
+  // Remove zero à esquerda
+  if (digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+  
+  // Identifica se já tem código do país
+  let countryCode = defaultCountry;
+  let localNumber = digits;
+  
+  if (digits.startsWith('55') && digits.length >= 12) {
+    // Já tem código do país
+    countryCode = '55';
+    localNumber = digits.substring(2);
+  } else if (digits.length >= 12) {
+    // Tem código de país diferente
+    return '+' + digits;
+  }
+  
+  // Verifica se é número brasileiro (DDD + número)
+  if (countryCode === '55' && localNumber.length >= 10) {
+    const ddd = localNumber.substring(0, 2);
+    let numero = localNumber.substring(2);
+    
+    // Verifica se é celular (começa com 6, 7, 8 ou 9)
+    const primeiroDigito = numero[0];
+    const isCelular = ['6', '7', '8', '9'].includes(primeiroDigito);
+    
+    if (isCelular) {
+      // Celulares devem ter 9 dígitos e começar com 9
+      if (numero.length === 8) {
+        // Número sem o 9º dígito - adiciona o 9
+        numero = '9' + numero;
+      } else if (numero.length === 9 && !numero.startsWith('9')) {
+        // Tem 9 dígitos mas não começa com 9 - pode ser erro, mas vamos manter
+        // (alguns casos raros de números antigos)
+      }
+    }
+    
+    // Monta o número final
+    return '+' + countryCode + ddd + numero;
+  }
+  
+  // Casos que não se encaixam nas regras acima
+  if (localNumber.length >= 10) {
+    return '+' + countryCode + localNumber;
+  }
+  
+  return '+' + digits;
+}
+
 export function formatPhoneLocal(phone: string): string {
   const e164 = ensureE164(phone);
   if (!e164) return phone;
