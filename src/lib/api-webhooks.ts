@@ -353,11 +353,15 @@ export async function fetchConnectionStatus(profile: any): Promise<'open' | 'clo
     
     if (!response.ok) return null;
     const data = await response.json();
-    const state = data?.state || data?.status || data?.connectionState || '';
     
-    if (state.toLowerCase().includes('open') || state.toLowerCase().includes('connect')) return 'open';
-    if (state.toLowerCase().includes('close')) return 'close';
-    if (state.toLowerCase().includes('connecting')) return 'connecting';
+    // A resposta da Evolution API retorna: {"instance":{"instanceName":"...", "state":"..."}}
+    const state = data?.instance?.state || data?.state || data?.status || data?.connectionState || '';
+    const stateLower = String(state).toLowerCase();
+    
+    // Ordem importante: verificar "connecting" antes de "open" para evitar falsos positivos
+    if (stateLower === 'connecting') return 'connecting';
+    if (stateLower === 'open') return 'open';
+    if (stateLower === 'close' || stateLower === 'closed') return 'close';
     
     return null;
   } catch {
