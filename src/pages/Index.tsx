@@ -584,11 +584,32 @@ const Index = () => {
     });
   }, [originCanon]);
 
-  // Helper: extrai IDs do pathname do Chatwoot
+  // Helper: extrai IDs do pathname do Chatwoot e também de query params
   function extractIdsFromPath(pathname: string) {
     const acc = pathname.match(/\/accounts\/(\d+)(?:\/|$)/i)?.[1] || '';
     const inbox = pathname.match(/\/inbox(?:es)?\/(\d+)(?:\/|$)/i)?.[1] || '';
     const conv = pathname.match(/\/conversations\/(\d+)(?:\/|$)/i)?.[1] || '';
+    return { acc, inbox, conv };
+  }
+
+  function extractIdsFromUrl(u: URL) {
+    // Primeiro, tenta pelos segmentos do path
+    const fromPath = extractIdsFromPath(u.pathname);
+    let { acc, inbox, conv } = fromPath;
+
+    // Depois, tenta por query params comuns
+    const sp = u.searchParams;
+    const pick = (keys: string[]) => keys.map(k => sp.get(k) || '').find(v => /\d+/.test(v)) || '';
+
+    if (!acc) acc = pick(['account_id', 'accountId', 'account', 'acc']);
+    if (!inbox) inbox = pick(['inbox_id', 'inboxId', 'inbox']);
+    if (!conv) conv = pick(['conversation_id', 'conversationId', 'conv']);
+
+    // Normaliza para apenas dígitos
+    acc = acc.replace(/[^\d]/g, '');
+    inbox = inbox.replace(/[^\d]/g, '');
+    conv = conv.replace(/[^\d]/g, '');
+
     return { acc, inbox, conv };
   }
 
@@ -608,7 +629,7 @@ const Index = () => {
     try {
       const u = new URL(raw);
       setParentPathInfo({ href: u.href, pathname: u.pathname });
-      const ids = extractIdsFromPath(u.pathname);
+      const ids = extractIdsFromUrl(u);
       applyIds(ids.acc, ids.inbox, ids.conv);
       setDetectMsg('URL processada com sucesso.');
     } catch (e: any) {
@@ -650,7 +671,7 @@ const Index = () => {
             console.log('[URL DETECTION] ✅ Lendo window.top.location.href:', topUrl);
             detectedUrl = topUrl;
             const topUrlObj = new URL(topUrl);
-            const ids = extractIdsFromPath(topUrlObj.pathname);
+            const ids = extractIdsFromUrl(topUrlObj);
             if (ids.acc) acc = ids.acc;
             if (ids.inbox) inbox = ids.inbox;
             if (ids.conv) conv = ids.conv;
@@ -669,7 +690,7 @@ const Index = () => {
         try {
           const refUrl = new URL(ref);
           if (refUrl.pathname && refUrl.pathname !== '/') {
-            const ids = extractIdsFromPath(refUrl.pathname);
+            const ids = extractIdsFromUrl(refUrl);
             if (ids.acc) acc = ids.acc;
             if (ids.inbox) inbox = ids.inbox;
             if (ids.conv) conv = ids.conv;
@@ -687,7 +708,7 @@ const Index = () => {
         const currentUrl = window.location.href;
         console.log('[URL DETECTION] Tentando window.location.href:', currentUrl);
         const currentUrlObj = new URL(currentUrl);
-        const ids = extractIdsFromPath(currentUrlObj.pathname);
+        const ids = extractIdsFromUrl(currentUrlObj);
         if (ids.acc) acc = ids.acc;
         if (ids.inbox) inbox = ids.inbox;
         if (ids.conv) conv = ids.conv;
@@ -829,7 +850,7 @@ const Index = () => {
           try {
             const u = new URL(maybeUrl);
             setParentPathInfo({ href: u.href, pathname: u.pathname });
-            const ids = extractIdsFromPath(u.pathname);
+            const ids = extractIdsFromUrl(u);
             
             addDebug('postMessage', 'URL completa recebida', { url: u.href, ...ids });
             
