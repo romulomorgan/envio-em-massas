@@ -1219,7 +1219,7 @@ const Index = () => {
         console.log('[Auto-Detect] 🧪 Testando perfil:', profile.name, isDefault ? '⭐ [DEFAULT]' : '', '(account_id:', testAccountId, ')');
         
         try {
-          // Testa contra API do Chatwoot: GET /api/v1/profile
+          // Testa contra API: GET /api/v1/profile
           const testUrl = `${filterOrigin}/api/v1/profile`;
           const response = await fetch(testUrl, {
             method: 'GET',
@@ -1285,7 +1285,7 @@ const Index = () => {
   // Detectar perfil manualmente a partir de URL colada
   async function handleDetectFromUrl() {
     if (!urlToDetect.trim()) {
-      setStatus('❌ Cole a URL do Chatwoot para detectar');
+      setStatus('❌ Cole a URL da página para detectar');
       return;
     }
 
@@ -1336,12 +1336,12 @@ const Index = () => {
       });
       
       if (!detectedOrigin) {
-        setStatus('❌ Não foi possível detectar a origem (URL base) do Chatwoot');
+        setStatus('❌ Não foi possível detectar a origem (URL base) da página');
         return;
       }
       
       if (!detectedAccountId) {
-        setStatus('❌ Não foi possível detectar o account_id da URL');
+        setStatus('❌ Não foi possível detectar o identificador da conta na URL');
         return;
       }
       
@@ -4195,22 +4195,22 @@ const Index = () => {
           <DialogHeader>
             <DialogTitle>🔍 Detectar Perfil Automaticamente</DialogTitle>
             <DialogDescription>
-              Cole a URL completa da página do Chatwoot para detectar automaticamente o perfil e configurações.
+              Cole a URL completa da página atual para detectar automaticamente o perfil e configurações.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="url-detect">URL do Chatwoot</Label>
+              <Label htmlFor="url-detect">URL da Página Atual</Label>
               <Input
                 id="url-detect"
-                placeholder="https://app.chatwoot.com/app/accounts/2/conversations/1428"
+                placeholder="https://sistema.exemplo.com.br/app/accounts/2/inbox/9"
                 value={urlToDetect}
                 onChange={(e) => setUrlToDetect(e.target.value)}
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                💡 Exemplo: cole a URL da conversa ou página de inbox do Chatwoot
+                💡 Cole aqui a URL completa da página que você está usando
               </p>
             </div>
           </div>
