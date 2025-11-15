@@ -295,14 +295,20 @@ const Index = () => {
   const labelsReqRef = useRef<{ controller: AbortController | null }>({ controller: null });
 
   // Buscar dados da tabela EMPRESAS_TOKENS
+  // CRÍTICO: Só executa quando tiver AMBOS: originCanon E accountId
   async function loadEmpresasTokens() {
     if (!originCanon || !accountId) {
-      console.log('[empresasTokens] Aguardando originCanon e accountId...');
+      console.log('[empresasTokens] ❌ Aguardando detecção completa da URL...');
+      console.log('[empresasTokens]   - originCanon:', originCanon || '❌ FALTANDO');
+      console.log('[empresasTokens]   - accountId:', accountId || '❌ FALTANDO');
+      setEmpresasTokensData(null);
       return null;
     }
 
     try {
-      console.log('[empresasTokens] Buscando na tabela EMPRESAS_TOKENS:', { originCanon, accountId });
+      console.log('[empresasTokens] ✅ Buscando na tabela EMPRESAS_TOKENS com filtros:');
+      console.log('[empresasTokens]   - originCanon:', originCanon);
+      console.log('[empresasTokens]   - accountId:', accountId);
       addDebug('emp_tokens', 'GET EMPRESAS_TOKENS', { originCanon, accountId });
       
       const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
@@ -401,7 +407,7 @@ const Index = () => {
       
       return empresasData;
     } catch (e) {
-      console.error('[empresasTokens] Erro:', e);
+      console.error('[empresasTokens] ❌ Erro:', e);
       addDebug('emp_tokens', 'Erro ao buscar EMPRESAS_TOKENS', { error: String(e) });
       setEmpresasTokensData(null);
       return null;
@@ -409,159 +415,112 @@ const Index = () => {
   }
 
   // Carregar configuração do tenant (busca na tabela evo_profiles)
+  // CRÍTICO: Só executa quando tiver AMBOS: originCanon E accountId detectados da URL
   async function loadTenantConfig() {
-    if (!originCanon) {
-      console.log('[tenantConfig] Aguardando originCanon...');
+    // BLOQUEIO: Não busca sem ambos os valores
+    if (!originCanon || !accountId) {
+      console.log('[tenantConfig] ❌ Aguardando detecção completa da URL...');
+      console.log('[tenantConfig]   - originCanon:', originCanon || '❌ FALTANDO');
+      console.log('[tenantConfig]   - accountId:', accountId || '❌ FALTANDO');
+      setTenantConfig(null);
+      setHasChatwootAccess(false);
+      setHasCvAccess(false);
       return null;
     }
 
     try {
       console.log('[tenantConfig] ========== INÍCIO DA BUSCA DO PERFIL ==========');
-      console.log('[tenantConfig] originCanon:', originCanon);
-      console.log('[tenantConfig] accountId atual:', accountId || '❌ VAZIO');
-      addDebug('tenant', 'Query evo_profiles', { originCanon, accountId });
-      const baseUrl = NOCO_URL;
-      let data: any = null;
-
-      // CRÍTICO: Se temos account_id, busca com AMBOS os filtros (AND) na tabela evo_profiles
-      if (accountId) {
-        const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
-        const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
-        console.log('[tenantConfig] 🔍 Buscando COM account_id (AND):', { account_id: accountId, chatwoot_origin: originCanon });
-        console.log('[tenantConfig] WHERE clause:', where);
-        console.log('[tenantConfig] URL completa:', url);
-        addDebug('tenant', 'GET evo_profiles (with account_id AND origin)', { url, where });
-        
-        data = await nocoGET(url).catch((err) => {
-          console.error('[tenantConfig] ❌ Erro na busca com account_id:', err);
-          addDebug('tenant', 'Erro na busca com account_id', { error: String(err) });
-          return null;
-        });
-        
-        if (data && Array.isArray(data.list) && data.list.length > 0) {
-          console.log('[tenantConfig] ✅ Encontrado perfil com account_id E origin:', data.list.length, 'registros');
-          console.log('[tenantConfig] Registros retornados:', data.list.map((r: any) => ({
-            Id: r.Id,
-            account_id: r.account_id,
-            chatwoot_origin: r.chatwoot_origin
-          })));
-        } else {
-          console.warn('[tenantConfig] ⚠️ Nenhum perfil encontrado com account_id E origin. Tentando buscar apenas por origin...');
-        }
-      } else {
-        console.warn('[tenantConfig] ⚠️ PROBLEMA CRÍTICO: accountId está vazio! Não será possível fazer busca precisa.');
-        console.warn('[tenantConfig] A busca será feita apenas por origin, o que pode retornar o perfil ERRADO!');
-      }
-
-      // FALLBACK: Se não encontrou com account_id OU não tem account_id, busca APENAS pelo origin
-      // ⚠️ ATENÇÃO: Isso pode retornar o perfil errado se houver múltiplas empresas com o mesmo origin!
+      console.log('[tenantConfig] ✅ originCanon detectado:', originCanon);
+      console.log('[tenantConfig] ✅ accountId detectado:', accountId);
+      addDebug('tenant', 'Query evo_profiles COM filtros completos', { originCanon, accountId });
+      
+      // BUSCA ÚNICA E PRECISA: Sempre com AMBOS os filtros (account_id AND chatwoot_origin)
+      const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
+      
+      console.log('[tenantConfig] 🔍 Buscando perfil EXATO (account_id AND origin):');
+      console.log('[tenantConfig]   - WHERE:', where);
+      console.log('[tenantConfig]   - URL:', url);
+      addDebug('tenant', 'GET evo_profiles (BUSCA PRECISA)', { url, where });
+      
+      const data = await nocoGET(url);
+      
       if (!data || !Array.isArray(data.list) || data.list.length === 0) {
-        const where = `(chatwoot_origin,eq,${originCanon})`;
-        const url = `${baseUrl}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?offset=0&limit=25&where=${encodeURIComponent(where)}`;
-        console.log('[tenantConfig] 🔍 Buscando APENAS por origin (FALLBACK):', originCanon);
-        console.log('[tenantConfig] ⚠️ RISCO: Pode retornar perfil de outra empresa se houver múltiplas empresas com mesmo origin!');
-        console.log('[tenantConfig] WHERE clause:', where);
-        console.log('[tenantConfig] URL completa:', url);
-        addDebug('tenant', 'GET evo_profiles (by origin only - FALLBACK)', { url, where });
-        
-        data = await nocoGET(url).catch((err) => {
-          console.error('[tenantConfig] ❌ Erro na busca sem account_id:', err);
-          addDebug('tenant', 'Erro na busca sem account_id', { error: String(err) });
-          return null;
-        });
-        
-        if (data && Array.isArray(data.list)) {
-          console.log('[tenantConfig] Registros encontrados (apenas por origin):', data.list.length);
-          console.log('[tenantConfig] ⚠️ TODOS os perfis com este origin:', data.list.map((r: any) => ({
-            Id: r.Id,
-            account_id: r.account_id,
-            chatwoot_origin: r.chatwoot_origin
-          })));
-        }
-      }
-
-      const list = (Array.isArray(data?.list) ? data.list : []).map((r: any) => ({
-        id: String(r.Id ?? r.id ?? ''),
-        chatwoot_origin: (r.chatwoot_origin || '').trim(),
-        account_id: String(r.account_id ?? ''),
-        is_active: !!(r.is_active === true || r.is_active === 'true' || r.is_active === 1),
-        cv_activa: !!(r.cv_activa === true || r.cv_activa === 'true' || r.cv_activa === 1 || r.cv_active === true || r.cv_active === 'true' || r.cv_active === 1),
-        admin_apikey: r.admin_apikey || '',
-        cv_email: r.cv_email || '',
-        cv_apikey: r.cv_apikey || '',
-        default: !!r.default
-      }));
-
-      console.log('[tenantConfig] Records completos do NocoDB:', data?.list?.map((r: any) => ({
-        Id: r.Id,
-        chatwoot_origin: r.chatwoot_origin,
-        account_id: r.account_id,
-        admin_apikey: r.admin_apikey ? '✅ presente' : '❌ ausente',
-        admin_apikey_value: r.admin_apikey
-      })));
-
-      console.log('[tenantConfig] Lista recebida:', list);
-
-      // Filtra pelo accountId se disponível
-      const filtered = accountId 
-        ? list.filter((r: any) => String(r.account_id) === String(accountId))
-        : list;
-
-      if (!filtered.length) {
-        console.log('[tenantConfig] ❌ Nenhum tenant encontrado');
+        console.error('[tenantConfig] ❌ NENHUM perfil encontrado com estes filtros!');
+        console.error('[tenantConfig]   - Verifique se existe um registro na tabela evo_profiles com:');
+        console.error('[tenantConfig]   - account_id =', accountId);
+        console.error('[tenantConfig]   - chatwoot_origin =', originCanon);
+        addDebug('tenant', 'ERRO: Nenhum perfil encontrado', { accountId, originCanon });
         setTenantConfig(null);
         setHasChatwootAccess(false);
         setHasCvAccess(false);
         return null;
       }
 
-      const chosen = filtered.find((x: any) => x.default) || filtered[0];
-      console.log('[tenantConfig] ✅ Perfil detectado automaticamente:', chosen.name || chosen.Id);
+      console.log('[tenantConfig] ✅ Perfil(is) encontrado(s):', data.list.length);
+      console.log('[tenantConfig] Registros:', data.list.map((r: any) => ({
+        Id: r.Id,
+        name: r.name || r.profile_name,
+        account_id: r.account_id,
+        chatwoot_origin: r.chatwoot_origin,
+        admin_apikey: r.admin_apikey ? '✅ configurado' : '❌ não configurado'
+      })));
+
+      // Pega o primeiro registro (preferência para default=true)
+      const chosen = data.list.find((r: any) => r.default === true || r.default === 'true' || r.default === 1) || data.list[0];
+      
+      console.log('[tenantConfig] ✅ Perfil selecionado:', chosen.name || chosen.profile_name || chosen.Id);
       console.log('[tenantConfig]   - account_id:', chosen.account_id);
       console.log('[tenantConfig]   - chatwoot_origin:', chosen.chatwoot_origin);
-      console.log('[tenantConfig]   - admin_apikey:', chosen.admin_apikey ? '✅ configurado' : '❌ não configurado');
-      addDebug('tenant', 'Perfil detectado (automático)', {
-        id: chosen.Id,
-        name: chosen.name,
-        account_id: chosen.account_id,
-        chatwoot_origin: chosen.chatwoot_origin,
-        admin_apikey: mask(chosen?.admin_apikey),
-        is_active: chosen.is_active
+      console.log('[tenantConfig]   - admin_apikey:', chosen.admin_apikey ? '✅ PRESENTE' : '❌ AUSENTE');
+      console.log('[tenantConfig]   - is_active:', chosen.is_active);
+
+      const tenantData: TenantConfig = {
+        id: String(chosen.Id || chosen.id || ''),
+        chatwoot_origin: (chosen.chatwoot_origin || '').trim(),
+        account_id: String(chosen.account_id || ''),
+        admin_apikey: chosen.admin_apikey || '',
+        is_active: !!(chosen.is_active === true || chosen.is_active === 'true' || chosen.is_active === 1),
+        cv_activa: !!(chosen.cv_activa === true || chosen.cv_activa === 'true' || chosen.cv_activa === 1 || chosen.cv_active === true || chosen.cv_active === 'true' || chosen.cv_active === 1),
+        default: !!(chosen.default === true || chosen.default === 'true' || chosen.default === 1),
+        cv_email: chosen.cv_email || '',
+        cv_apikey: chosen.cv_apikey || ''
+      };
+
+      addDebug('tenant', 'Perfil carregado com sucesso', {
+        id: tenantData.id,
+        account_id: tenantData.account_id,
+        chatwoot_origin: tenantData.chatwoot_origin,
+        has_admin_apikey: !!tenantData.admin_apikey,
+        is_active: tenantData.is_active
       });
 
-      // CORREÇÃO: NÃO sobrescreve o accountId da URL com o do tenant
-      // O accountId da URL deve ter prioridade absoluta
-      console.log('[tenantConfig] Mantendo accountId da URL:', accountId);
-
-      setTenantConfig(chosen);
-      setHasChatwootAccess(!!(chosen.admin_apikey) && chosen.is_active === true);
+      setTenantConfig(tenantData);
+      setHasChatwootAccess(!!(tenantData.admin_apikey && tenantData.is_active));
       
-      // Não define hasCvAccess aqui, será definido após carregar empresasTokens
-      // setHasCvAccess(chosen.cv_activa || chosen.cv_active);
-
-      // Expor variáveis globais - USA O ACCOUNTID DA URL, NÃO DO TENANT
+      // Expor variáveis globais
       if (typeof window !== 'undefined') {
-        (window as any).__ADMIN_APIKEY__ = chosen.admin_apikey || '';
-        (window as any).__ACCOUNT_ID__ = String(accountId || '');
+        (window as any).__ADMIN_APIKEY__ = tenantData.admin_apikey || '';
+        (window as any).__ACCOUNT_ID__ = String(accountId);
         (window as any).__INBOX_ID__ = String(inboxId || '');
         (window as any).__CONVERSATION_ID__ = String(conversationId || '');
         (window as any).__FORCE_ORIGIN__ = originCanon;
-        console.log('[tenantConfig] Variáveis globais definidas:', {
-          __ADMIN_APIKEY__: chosen.admin_apikey ? '✅ definido' : '❌ vazio',
+        
+        console.log('[tenantConfig] 🌐 Variáveis globais atualizadas:', {
+          __ADMIN_APIKEY__: tenantData.admin_apikey ? '✅ definido' : '❌ vazio',
           __ACCOUNT_ID__: accountId,
-          __INBOX_ID__: inboxId,
-          __CONVERSATION_ID__: conversationId
+          __INBOX_ID__: inboxId || '(vazio)',
+          __CONVERSATION_ID__: conversationId || '(vazio)'
         });
       }
 
-      // Carrega dados da tabela EMPRESAS_TOKENS após carregar tenantConfig
-      if (accountId) {
-        await loadEmpresasTokens();
-      }
+      // Carrega dados da tabela EMPRESAS_TOKENS
+      await loadEmpresasTokens();
 
-      return chosen;
+      return tenantData;
     } catch (e) {
-      console.error('[tenantConfig] Erro geral:', e);
+      console.error('[tenantConfig] ❌ Erro ao carregar perfil:', e);
+      addDebug('tenant', 'ERRO ao carregar perfil', { error: String(e) });
       setTenantConfig(null);
       setHasChatwootAccess(false);
       setHasCvAccess(false);
@@ -569,9 +528,16 @@ const Index = () => {
     }
   }
 
+  // CRÍTICO: Só carrega tenant quando tiver AMBOS (originCanon E accountId)
   useEffect(() => {
-    if (originCanon) {
+    if (originCanon && accountId) {
+      console.log('[useEffect:tenant] ✅ Condições atendidas, carregando tenant config...');
       loadTenantConfig();
+    } else {
+      console.log('[useEffect:tenant] ⏳ Aguardando detecção completa:', {
+        originCanon: originCanon || '❌',
+        accountId: accountId || '❌'
+      });
     }
   }, [originCanon, accountId]);
 
@@ -1817,8 +1783,11 @@ const Index = () => {
       setStatus('❌ Erro: Configuração do tenant não encontrada. Verifique se o admin_apikey está definido.');
       return;
     }
-    if (!accountId) {
-      setStatus('❌ Erro: account_id não detectado.');
+    if (!accountId || !originCanon) {
+      console.error('[handleSend] ❌ CRÍTICO: Dados da URL não detectados!');
+      console.error('[handleSend]   - accountId:', accountId || '❌ NÃO DETECTADO');
+      console.error('[handleSend]   - originCanon:', originCanon || '❌ NÃO DETECTADO');
+      setStatus('❌ Erro: dados da URL (accountId ou origin) não foram detectados. Recarregue a página.');
       return;
     }
     if (!selectedProfileId) {
@@ -1983,12 +1952,16 @@ const Index = () => {
 
   async function loadMonitor() {
     if (!accountId || !originCanon) {
-      console.log('[Monitor] Aguardando accountId e originCanon...', { accountId, originCanon });
+      console.log('[Monitor] ❌ Aguardando detecção completa da URL:', { 
+        accountId: accountId || '❌ NÃO DETECTADO', 
+        originCanon: originCanon || '❌ NÃO DETECTADO' 
+      });
       return;
     }
     
     setMonitorBusy(true);
     try {
+      // BUSCA PRECISA: Sempre com account_id AND chatwoot_origin
       const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
       const offset = (page - 1) * pageSize;
       const sortField = queueSort.field === 'Id' ? 'Id' : queueSort.field;
@@ -1998,11 +1971,14 @@ const Index = () => {
       // USA A TABELA CORRETA: TABLE_SEND_QUEUE_ID
       const url = `${NOCO_URL}/api/v2/tables/${TABLE_SEND_QUEUE_ID}/records?where=${encodeURIComponent(where)}&offset=${offset}&limit=${pageSize}${sort}`;
       
-      console.log('[Monitor] Consultando campanhas:', { accountId, originCanon, url });
+      console.log('[Monitor] 🔍 Consultando campanhas com filtros precisos:');
+      console.log('[Monitor]   - accountId:', accountId);
+      console.log('[Monitor]   - originCanon:', originCanon);
+      console.log('[Monitor]   - URL:', url);
       
       const data = await nocoGET(url);
       
-      console.log('[Monitor] Resposta NocoDB:', { total: data?.pageInfo?.totalRows, registros: data?.list?.length });
+      console.log('[Monitor] ✅ Resposta NocoDB:', { total: data?.pageInfo?.totalRows, registros: data?.list?.length });
       
       const list = Array.isArray(data?.list) ? data.list : [];
       setQueueRows(list.map((r: any) => ({
@@ -2021,7 +1997,7 @@ const Index = () => {
       
       setTotalRows(data?.pageInfo?.totalRows || 0);
     } catch (e: any) {
-      console.error('Erro ao carregar monitor:', e);
+      console.error('[Monitor] ❌ Erro ao carregar:', e);
     } finally {
       setMonitorBusy(false);
     }
@@ -3561,17 +3537,27 @@ const Index = () => {
           <div className="mt-2 space-y-3 text-xs">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div className="p-2 rounded border border-border">
-                <div className="font-semibold mb-1">Detectado</div>
-                <div>originCanon: {originCanon || '(vazio)'}</div>
-                <div>accountId: {accountId || '(vazio)'}</div>
-                <div>inboxId: {inboxId || '(vazio)'}</div>
-                <div>conversationId: {conversationId || '(vazio)'}</div>
+                <div className="font-semibold mb-1">🔍 Detectado da URL</div>
+                <div className={originCanon ? 'text-green-600' : 'text-red-600'}>
+                  originCanon: {originCanon || '❌ NÃO DETECTADO'}
+                </div>
+                <div className={accountId ? 'text-green-600' : 'text-red-600'}>
+                  accountId: {accountId || '❌ NÃO DETECTADO'}
+                </div>
+                <div className={inboxId ? 'text-green-600' : 'text-muted-foreground'}>
+                  inboxId: {inboxId || '(vazio)'}
+                </div>
+                <div className={conversationId ? 'text-green-600' : 'text-muted-foreground'}>
+                  conversationId: {conversationId || '(vazio)'}
+                </div>
               </div>
               <div className="p-2 rounded border border-border">
-                <div className="font-semibold mb-1">Perfil detectado</div>
+                <div className="font-semibold mb-1">⚙️ Perfil Carregado</div>
                 <div>hasChatwootAccess: {String(hasChatwootAccess)}</div>
                 <div>hasCvAccess: {String(hasCvAccess)}</div>
-                <div>admin_api_key: {mask(tenantConfig?.admin_apikey)}</div>
+                <div className={tenantConfig?.admin_apikey ? 'text-green-600' : 'text-red-600'}>
+                  admin_apikey: {tenantConfig?.admin_apikey ? '✅ PRESENTE' : '❌ AUSENTE'}
+                </div>
                 <div>cv_url: {empresasTokensData?.cv_url || '(vazio)'}</div>
                 <div>cv_email: {empresasTokensData?.cv_email ? '✅' : '❌'}</div>
                 <div>cv_apikey: {mask(empresasTokensData?.cv_apikey)}</div>
