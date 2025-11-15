@@ -194,9 +194,12 @@ const Index = () => {
 
   // Perfis
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const storageKeyByOrigin = (o: string) => `selected_profile_id:${o || 'global'}`;
   const [selectedProfileId, setSelectedProfileId] = useState(() => {
-    // Tenta carregar do localStorage ao iniciar
+    // Tenta carregar do localStorage ao iniciar (por origem). Fallback para chave antiga.
     try {
+      const byOrigin = localStorage.getItem(storageKeyByOrigin(originCanonInitial));
+      if (byOrigin) return byOrigin;
       return localStorage.getItem('selected_profile_id') || '';
     } catch {
       return '';
@@ -1265,7 +1268,7 @@ const Index = () => {
               if (profile.inbox_id) {
                 localStorage.setItem('chatwoot_inbox_id', String(profile.inbox_id));
               }
-              localStorage.setItem('selected_profile_id', String(profile.Id));
+              // Persistência do perfil acontece na página principal quando o dropdown reflete a seleção.
             } catch {}
             
             const statusMsg = isDefault 
@@ -1640,29 +1643,45 @@ const Index = () => {
     }
   }, [hasCvAccess, listMode, empresasTokensData]);
 
-  // Fecha o modal automaticamente quando um perfil for selecionado
+  // Fecha o modal automaticamente somente quando o perfil estiver realmente no dropdown
   useEffect(() => {
     if (!showDetectProfileModal) return;
     if (!selectedProfileId) return;
+    const exists = profiles.some(p => String(p.Id) === String(selectedProfileId));
+    if (!exists) return;
     setStatus('✅ Detectado com sucesso!');
     const t = window.setTimeout(() => {
       setShowDetectProfileModal(false);
       setUrlToDetect('');
     }, 1500);
     return () => window.clearTimeout(t);
-  }, [showDetectProfileModal, selectedProfileId]);
+  }, [showDetectProfileModal, selectedProfileId, profiles]);
 
-  // Salva o perfil selecionado no localStorage sempre que mudar
+  // Salva o perfil selecionado no localStorage sempre que mudar (por origem) — e restaura quando a origem mudar
   useEffect(() => {
-    if (selectedProfileId) {
+    // Restaurar do cache quando originCanon mudar e não houver seleção
+    if (!selectedProfileId && originCanon) {
       try {
-        localStorage.setItem('selected_profile_id', selectedProfileId);
-        console.log('[localStorage] ✅ Perfil salvo no cache:', selectedProfileId);
-      } catch (e) {
-        console.error('[localStorage] ❌ Erro ao salvar perfil:', e);
-      }
+        const saved = localStorage.getItem(storageKeyByOrigin(originCanon));
+        if (saved) {
+          setSelectedProfileId(saved);
+          console.log('[localStorage] ⚡ Restaurado perfil do cache por origem:', originCanon, saved);
+        }
+      } catch {}
     }
-  }, [selectedProfileId]);
+
+    if (!selectedProfileId) return;
+    const exists = profiles.some(p => String(p.Id) === String(selectedProfileId));
+    if (!exists) return;
+
+    try {
+      const key = storageKeyByOrigin(originCanon);
+      localStorage.setItem(key, selectedProfileId);
+      console.log('[localStorage] ✅ Perfil salvo no cache por origem:', originCanon, selectedProfileId);
+    } catch (e) {
+      console.error('[localStorage] ❌ Erro ao salvar perfil:', e);
+    }
+  }, [selectedProfileId, profiles, originCanon]);
 
   // ========== FUNÇÕES DE CONTATOS ==========
   
