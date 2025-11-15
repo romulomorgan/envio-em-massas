@@ -1161,6 +1161,91 @@ const Index = () => {
     return () => clearInterval(id);
   }, []);
 
+  // Nova função: Auto-detecta perfil válido testando contra API do Chatwoot
+  async function autoDetectValidProfile(filterOrigin: string) {
+    console.log('[Auto-Detect] 🔍 Iniciando busca de perfil válido para origin:', filterOrigin);
+    
+    try {
+      // Busca TODOS os perfis deste origin (sem filtrar por account_id ainda)
+      const whereCondition = `(chatwoot_origin,eq,${filterOrigin})`;
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?where=${encodeURIComponent(whereCondition)}&limit=1000`;
+      
+      console.log('[Auto-Detect] 📡 Consultando NocoDB:', url);
+      const data = await nocoGET(url);
+      const list = Array.isArray(data?.list) ? data.list : [];
+      
+      console.log('[Auto-Detect] ✅ Encontrados', list.length, 'perfis para testar');
+      
+      // Testa cada perfil contra a API do Chatwoot
+      for (const profile of list) {
+        const testAccountId = profile.account_id;
+        const testAdminApiKey = profile.admin_apikey || profile.adimin_apikey || '';
+        
+        if (!testAccountId || !testAdminApiKey) {
+          console.log('[Auto-Detect] ⏭️ Perfil', profile.name, '- dados incompletos (sem account_id ou admin_apikey)');
+          continue;
+        }
+        
+        console.log('[Auto-Detect] 🧪 Testando perfil:', profile.name, '(account_id:', testAccountId, ')');
+        
+        try {
+          // Testa contra API do Chatwoot: GET /api/v1/profile
+          const testUrl = `${filterOrigin}/api/v1/profile`;
+          const response = await fetch(testUrl, {
+            method: 'GET',
+            headers: {
+              'api_access_token': testAdminApiKey,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const profileData = await response.json();
+            console.log('[Auto-Detect] ✅ PERFIL VÁLIDO ENCONTRADO!', profile.name);
+            console.log('[Auto-Detect] 📊 Dados retornados:', profileData);
+            
+            // Atualiza as variáveis globais com o perfil válido
+            setAccountId(String(testAccountId));
+            if (profile.inbox_id) {
+              setInboxId(String(profile.inbox_id));
+            }
+            
+            // Salva no localStorage
+            try {
+              localStorage.setItem('chatwoot_account_id', String(testAccountId));
+              if (profile.inbox_id) {
+                localStorage.setItem('chatwoot_inbox_id', String(profile.inbox_id));
+              }
+            } catch {}
+            
+            setStatus(`✅ Perfil "${profile.name}" detectado e validado automaticamente.`);
+            addDebug('auto-detect', 'Perfil válido encontrado', { 
+              profileName: profile.name, 
+              accountId: testAccountId,
+              inboxId: profile.inbox_id 
+            });
+            
+            return { 
+              accountId: String(testAccountId), 
+              inboxId: profile.inbox_id ? String(profile.inbox_id) : '' 
+            };
+          } else {
+            console.log('[Auto-Detect] ❌ Perfil', profile.name, '- API retornou status:', response.status);
+          }
+        } catch (err) {
+          console.error('[Auto-Detect] ❌ Erro ao testar perfil', profile.name, ':', err);
+        }
+      }
+      
+      console.warn('[Auto-Detect] ⚠️ Nenhum perfil válido encontrado após testar todos');
+      return null;
+      
+    } catch (err: any) {
+      console.error('[Auto-Detect] ❌ Erro fatal:', err);
+      return null;
+    }
+  }
+
   async function loadProfiles(filterOrigin?: string, filterAccountId?: string) {
     // CRÍTICO: Só carrega perfis se tiver ambos os filtros
     if (!filterOrigin || !filterAccountId) {
@@ -1253,6 +1338,20 @@ const Index = () => {
       setLoadingProfiles(false);
     }
   }
+
+  // Novo: Auto-detecta perfil válido quando origin é detectado (mas accountId ainda não)
+  useEffect(() => {
+    if (originCanon && !accountId) {
+      console.log('[Auto-Detect] 🚀 Origin detectado, mas accountId ausente. Iniciando auto-detecção...');
+      autoDetectValidProfile(originCanon).then(result => {
+        if (result) {
+          console.log('[Auto-Detect] ✅ Auto-detecção concluída com sucesso');
+        } else {
+          console.warn('[Auto-Detect] ⚠️ Não foi possível auto-detectar um perfil válido');
+        }
+      });
+    }
+  }, [originCanon]);
 
   useEffect(() => {
     // CRÍTICO: Só carrega perfis DEPOIS de detectar origin e accountId da URL
