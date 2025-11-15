@@ -543,6 +543,23 @@ const Index = () => {
 
   // Debug inicial
   useEffect(() => {
+    console.log('='.repeat(80));
+    console.log('🔧 CONFIGURAÇÃO NECESSÁRIA NO CHATWOOT (Dashboard App):');
+    console.log('='.repeat(80));
+    console.log('Para que este app detecte account_id e conversation_id automaticamente,');
+    console.log('configure o Dashboard App no Chatwoot para enviar eventos via postMessage:');
+    console.log('');
+    console.log('window.postMessage({');
+    console.log('  event: "chatwoot:ready",');
+    console.log('  data: {');
+    console.log('    account_id: 2,');
+    console.log('    conversation: { id: 2176, inbox_id: 1 }');
+    console.log('  }');
+    console.log('}, "*");');
+    console.log('');
+    console.log('OU expor globalmente via: window.chatwootSDK = { account_id, conversation_id }');
+    console.log('='.repeat(80));
+    
     addDebug('init', 'Context detected on load', {
       originCanon,
       referrer: refCtx?.href,
@@ -806,6 +823,107 @@ const Index = () => {
 
     return () => clearInterval(timer);
   }, [accountId]);
+
+  // CRÍTICO: Detecta contexto via window.chatwootSDK e window.parent.chatwoot (Dashboard Apps)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // 1) Tenta ler window.chatwootSDK (exposto pelo Chatwoot nos Dashboard Apps)
+    const tryReadChatwootSDK = () => {
+      try {
+        const sdk = (window as any).chatwootSDK || (window as any).chatwoot;
+        if (sdk && typeof sdk === 'object') {
+          addDebug('sdk', 'window.chatwootSDK encontrado', sdk);
+          const acc = sdk.account_id || sdk.accountId;
+          const inbox = sdk.inbox_id || sdk.inboxId;
+          const conv = sdk.conversation_id || sdk.conversationId || sdk.id;
+          if (acc || conv) {
+            addDebug('sdk', 'IDs via chatwootSDK', { acc, inbox, conv });
+            applyIds(String(acc || ''), String(inbox || ''), String(conv || ''));
+          }
+        }
+      } catch {}
+    };
+
+    // 2) Tenta ler window.parent.chatwoot (se parent expor)
+    const tryReadParentChatwoot = () => {
+      try {
+        if (window.parent && window.parent !== window) {
+          const parentCW = (window.parent as any).chatwoot || (window.parent as any).chatwootSDK;
+          if (parentCW && typeof parentCW === 'object') {
+            addDebug('sdk', 'parent.chatwoot encontrado', parentCW);
+            const acc = parentCW.account_id || parentCW.accountId;
+            const inbox = parentCW.inbox_id || parentCW.inboxId;
+            const conv = parentCW.conversation_id || parentCW.conversationId || parentCW.id;
+            if (acc || conv) {
+              addDebug('sdk', 'IDs via parent.chatwoot', { acc, inbox, conv });
+              applyIds(String(acc || ''), String(inbox || ''), String(conv || ''));
+            }
+          }
+        }
+      } catch {}
+    };
+
+    // 3) Polling periódico (caso SDK carregue depois)
+    const pollInterval = setInterval(() => {
+      tryReadChatwootSDK();
+      tryReadParentChatwoot();
+    }, 1000);
+
+    // Executa imediatamente
+    tryReadChatwootSDK();
+    tryReadParentChatwoot();
+
+    // Limpa após 10s
+    setTimeout(() => clearInterval(pollInterval), 10000);
+
+    return () => clearInterval(pollInterval);
+  }, []);
+
+  // Listener para eventos oficiais do Chatwoot Dashboard Apps (chatwoot:ready, chatwoot:conversation-changed)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onChatwootEvent = (e: MessageEvent) => {
+      try {
+        const d: any = e?.data;
+        if (!d || typeof d !== 'object') return;
+
+        const evt = String(d.event || d.type || '').toLowerCase();
+        
+        // Eventos oficiais do Dashboard App
+        if (evt === 'chatwoot:ready' || evt === 'chatwoot:conversation-changed' || evt === 'chatwoot:contact-changed') {
+          addDebug('chatwoot-event', `Evento ${evt} recebido`, d);
+          
+          const payload = d.data || d.payload || {};
+          const conv = payload.conversation || payload.conversationDetails || {};
+          const acc = String(conv.account_id || payload.account_id || payload.accountId || '');
+          const inbox = String(conv.inbox_id || payload.inbox_id || payload.inboxId || '');
+          const convId = String(conv.display_id || conv.id || payload.conversation_id || payload.conversationId || '');
+          
+          if (acc || convId) {
+            addDebug('chatwoot-event', 'IDs extraídos do evento oficial', { acc, inbox, convId });
+            applyIds(acc, inbox, convId);
+          }
+        }
+      } catch (err) {
+        console.error('[chatwoot-event] Erro ao processar evento:', err);
+      }
+    };
+
+    window.addEventListener('message', onChatwootEvent);
+    
+    // Solicita contexto ao Chatwoot via eventos oficiais
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ event: 'chatwoot:context-request' }, '*');
+        window.parent.postMessage({ type: 'chatwoot:context-request' }, '*');
+        addDebug('chatwoot-event', 'Solicitando contexto via chatwoot:context-request');
+      }
+    } catch {}
+
+    return () => window.removeEventListener('message', onChatwootEvent);
+  }, []);
 
   // Listener para receber IDs via postMessage (fallback quando referrer não traz o pathname)
   useEffect(() => {
