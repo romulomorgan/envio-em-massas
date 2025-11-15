@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import toast from 'react-hot-toast';
 import { SectionTitle } from '@/components/SectionTitle';
 import { Field } from '@/components/Field';
 import { SmallBtn } from '@/components/SmallBtn';
@@ -17,6 +18,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { EmojiInput } from '@/components/EmojiInput';
 import { WAPreview } from '@/components/WAPreview';
 import { FileUpload } from '@/components/FileUpload';
@@ -74,7 +84,7 @@ import {
   fetchUsersByEmpreendimentos,
   fetchConnectionStatus
 } from '@/lib/api-webhooks';
-import { Contact, Block, Label, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
+import { Contact, Block, Label as LabelType, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
 
 const TYPE_LABEL: Record<string, string> = {
   text: 'Texto',
@@ -132,7 +142,10 @@ const Index = () => {
   
   const __forcedOrigin = (typeof window !== 'undefined' && (window as any).__FORCE_ORIGIN__) || refCtx?.chatwootOrigin || origin;
   const originNo = normalizeOrigin(__forcedOrigin);
-  const originCanon = canonOrigin(originNo);
+  const originCanonInitial = canonOrigin(originNo);
+  
+  // Estado para originCanon (pode ser alterado pela detecção manual)
+  const [originCanon, setOriginCanon] = useState(originCanonInitial);
 
   // IDs (simplificado - sem roteamento complexo do Chatwoot)
   const [accountId, setAccountId] = useState('');
@@ -151,6 +164,11 @@ const Index = () => {
   // Debug
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugLogs, setDebugLogs] = useState<Array<{ id: string; ts: string; scope: string; message: string; data?: any }>>([]);
+  
+  // Modal Detectar Perfil
+  const [showDetectProfileModal, setShowDetectProfileModal] = useState(false);
+  const [urlToDetect, setUrlToDetect] = useState('');
+  const [followUpTab, setFollowUpTab] = useState<'scheduled'|'logs'>('scheduled');
   const mask = (v?: string, keep: number = 4) => {
     const s = String(v || '');
     return s ? `${s.slice(0, 3)}***${s.slice(-keep)}` : '';
@@ -185,7 +203,7 @@ const Index = () => {
   const [campaignName, setCampaignName] = useState('Campanha');
 
   // Labels/Etiquetas
-  const [labels, setLabels] = useState<Label[]>([]);
+  const [labels, setLabels] = useState<LabelType[]>([]);
   const [labelsBusy, setLabelsBusy] = useState(false);
   const [needSelectLabelHint, setNeedSelectLabelHint] = useState(false);
   const [selectedLabelIds, setSelectedLabelIds] = useState<(string | number)[]>([]);
@@ -1263,6 +1281,113 @@ const Index = () => {
       return null;
     }
   }
+
+  // Detectar perfil manualmente a partir de URL colada
+  async function handleDetectFromUrl() {
+    if (!urlToDetect.trim()) {
+      setStatus('❌ Cole a URL do Chatwoot para detectar');
+      return;
+    }
+
+    try {
+      setStatus('🔍 Detectando perfil a partir da URL...');
+      
+      // Cria um objeto temporário simulando window.location
+      const url = new URL(urlToDetect);
+      const pathname = url.pathname || '';
+      const search = url.search || '';
+      const hash = url.hash || '';
+      const origin = url.origin || '';
+      
+      console.log('[Manual Detect] 🔍 URL fornecida:', urlToDetect);
+      console.log('[Manual Detect] 📊 Pathname:', pathname, 'Origin:', origin);
+      
+      // Extrai account_id, conversation_id usando mesma lógica
+      const accMatch = pathname.match(/\/accounts?\/(\d+)/i);
+      const convMatch = pathname.match(/\/conversations?\/(\d+)/i);
+      const inboxMatch = pathname.match(/\/inbox\/(\d+)/i);
+      
+      let detectedAccountId = accMatch ? accMatch[1] : null;
+      let detectedConvId = convMatch ? convMatch[1] : null;
+      let detectedInboxId = inboxMatch ? inboxMatch[1] : null;
+      
+      // Fallback query/hash
+      const qs = new URLSearchParams(search);
+      const hs = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+      const get = (keys: string[]) => {
+        for (const k of keys) {
+          const v = qs.get(k) || hs.get(k);
+          if (v !== null && v !== undefined && String(v).trim() !== '') return String(v).trim();
+        }
+        return null;
+      };
+      
+      if (!detectedAccountId) detectedAccountId = get(['acc','account_id','accountId','account']);
+      if (!detectedConvId) detectedConvId = get(['conv','conversation_id','conversationId','id']);
+      if (!detectedInboxId) detectedInboxId = get(['inbox','inbox_id','inboxId']);
+      
+      const detectedOrigin = origin || get(['origin','chatwoot_origin']) || '';
+      
+      console.log('[Manual Detect] ✅ Extraído:', { 
+        accountId: detectedAccountId, 
+        conversationId: detectedConvId,
+        inboxId: detectedInboxId,
+        origin: detectedOrigin 
+      });
+      
+      if (!detectedOrigin) {
+        setStatus('❌ Não foi possível detectar a origem (URL base) do Chatwoot');
+        return;
+      }
+      
+      if (!detectedAccountId) {
+        setStatus('❌ Não foi possível detectar o account_id da URL');
+        return;
+      }
+      
+      // Atualiza variáveis globais
+      const canon = normalizeOrigin(detectedOrigin);
+      setOriginCanon(canon);
+      localStorage.setItem('cv_origin', canon);
+      
+      setAccountId(detectedAccountId);
+      localStorage.setItem('cv_account_id', detectedAccountId);
+      
+      if (detectedConvId) {
+        setConversationId(detectedConvId);
+        localStorage.setItem('cv_conversation_id', detectedConvId);
+      }
+      if (detectedInboxId) {
+        setInboxId(detectedInboxId);
+        localStorage.setItem('cv_inbox_id', detectedInboxId);
+      }
+      
+      // Busca perfis no NocoDB
+      const result = await autoDetectValidProfile(canon);
+      
+      if (result) {
+        setStatus(`✅ Perfil detectado: Account ${result.accountId}`);
+        setShowDetectProfileModal(false);
+        setUrlToDetect('');
+        
+        // Atualiza interface
+        setAccountId(result.accountId);
+        if (result.inboxId) setInboxId(result.inboxId);
+        
+        // Recarrega lista de perfis
+        await loadProfiles(canon, result.accountId);
+      } else {
+        setStatus('❌ Nenhum perfil válido encontrado para esta URL');
+      }
+      
+    } catch (err) {
+      console.error('[Manual Detect] ❌ Erro:', err);
+      setStatus('❌ Erro ao detectar perfil. Verifique a URL.');
+    }
+  }
+
+  // Verifica se deve mostrar botão de detectar perfil
+  const shouldShowDetectButton = profiles.length === 0 && !accountId;
 
   async function loadProfiles(filterOrigin?: string, filterAccountId?: string) {
     // CRÍTICO: Só carrega perfis se tiver ambos os filtros
@@ -2870,10 +2995,25 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-6">
         <div className="card-custom p-6 md:p-8">
-          <h1 className="text-3xl font-bold mb-2 text-foreground">Envio em Massa</h1>
-          <p className="text-sm text-muted-foreground mb-4">
-            Fluxo: perfil → etiquetas/contatos → <b>composição por blocos</b> → <b>upload</b> → <b>agendar</b> e acompanhar.
-          </p>
+          {/* Header com botão Detectar Perfil */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+            <div className="flex-1">
+              <h1 className="text-3xl font-bold text-foreground">Envio em Massa</h1>
+              <p className="text-sm text-muted-foreground">
+                Fluxo: perfil → etiquetas/contatos → <b>composição por blocos</b> → <b>upload</b> → <b>agendar</b> e acompanhar.
+              </p>
+            </div>
+            
+            {shouldShowDetectButton && (
+              <SmallBtn 
+                variant="primary" 
+                onClick={() => setShowDetectProfileModal(true)}
+                title="Detectar perfil automaticamente a partir de URL"
+              >
+                🔍 Detectar Perfil
+              </SmallBtn>
+            )}
+          </div>
 
           
           {/* Tabs */}
@@ -4048,6 +4188,52 @@ const Index = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {/* Modal Detectar Perfil */}
+      <Dialog open={showDetectProfileModal} onOpenChange={setShowDetectProfileModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>🔍 Detectar Perfil Automaticamente</DialogTitle>
+            <DialogDescription>
+              Cole a URL completa da página do Chatwoot para detectar automaticamente o perfil e configurações.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="url-detect">URL do Chatwoot</Label>
+              <Input
+                id="url-detect"
+                placeholder="https://app.chatwoot.com/app/accounts/2/conversations/1428"
+                value={urlToDetect}
+                onChange={(e) => setUrlToDetect(e.target.value)}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                💡 Exemplo: cole a URL da conversa ou página de inbox do Chatwoot
+              </p>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowDetectProfileModal(false);
+                setUrlToDetect('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleDetectFromUrl}
+              disabled={!urlToDetect.trim()}
+            >
+              🔍 Detectar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
