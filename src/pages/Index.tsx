@@ -1023,6 +1023,65 @@ const Index = () => {
     }
   }, [originCanon, accountId]);
 
+  // Atualiza configurações quando um perfil é selecionado
+  useEffect(() => {
+    if (!selectedProfileId || profiles.length === 0) return;
+    
+    const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
+    
+    if (!selectedProfile) {
+      console.warn('[Perfil Selecionado] ⚠️ Perfil não encontrado:', selectedProfileId);
+      return;
+    }
+    
+    console.log('[Perfil Selecionado] ✅ Perfil ativo:', selectedProfile.name);
+    console.log('[Perfil Selecionado]   - admin_apikey:', selectedProfile.admin_apikey ? '✅ disponível' : '❌ não configurado');
+    console.log('[Perfil Selecionado]   - is_active:', selectedProfile.is_active);
+    
+    // Atualiza tenantConfig com base no perfil selecionado
+    const profileConfig: TenantConfig = {
+      id: String(selectedProfile.Id),
+      chatwoot_origin: selectedProfile.chatwoot_origin,
+      account_id: String(selectedProfile.account_id),
+      admin_apikey: selectedProfile.admin_apikey,
+      is_active: selectedProfile.is_active,
+      default: selectedProfile.default,
+      cv_activa: false,
+      cv_active: false,
+      cv_email: '',
+      cv_apikey: ''
+    };
+    
+    setTenantConfig(profileConfig);
+    setHasChatwootAccess(!!(selectedProfile.admin_apikey && selectedProfile.is_active));
+    
+    // Expõe variáveis globais do perfil selecionado
+    if (typeof window !== 'undefined') {
+      (window as any).__ADMIN_APIKEY__ = selectedProfile.admin_apikey || '';
+      console.log('[Perfil Selecionado] 🌐 Variável global __ADMIN_APIKEY__ atualizada');
+      
+      addDebug('profile', 'Perfil selecionado e configurado', {
+        name: selectedProfile.name,
+        id: selectedProfile.Id,
+        has_admin_apikey: !!selectedProfile.admin_apikey,
+        is_active: selectedProfile.is_active
+      });
+    }
+    
+    // Atualiza delays globais com base no perfil
+    setItemDelay(selectedProfile.item_delay);
+    setItemVariance(selectedProfile.item_variance);
+    setContactDelay(selectedProfile.contact_delay);
+    setContactVariance(selectedProfile.contact_variance);
+    
+    console.log('[Perfil Selecionado] ⏱️ Delays configurados:', {
+      itemDelay: selectedProfile.item_delay,
+      itemVariance: selectedProfile.item_variance,
+      contactDelay: selectedProfile.contact_delay,
+      contactVariance: selectedProfile.contact_variance
+    });
+  }, [selectedProfileId, profiles]);
+
   // Carrega etiquetas automaticamente quando tiver acesso ao Chatwoot
   useEffect(() => {
     if (hasChatwootAccess && tenantConfig?.admin_apikey && originCanon && accountId) {
