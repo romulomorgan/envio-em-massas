@@ -916,20 +916,32 @@ const Index = () => {
     return () => clearInterval(id);
   }, []);
 
-  async function loadProfiles() {
+  async function loadProfiles(filterOrigin?: string, filterAccountId?: string) {
+    // CRÍTICO: Só carrega perfis se tiver ambos os filtros
+    if (!filterOrigin || !filterAccountId) {
+      console.warn('[Perfis] ⚠️ Aguardando detecção de origin e accountId da URL...');
+      setProfiles([]);
+      setProfilesStatus({});
+      return;
+    }
+    
     setLoadingProfiles(true);
     setProfilesError('');
     
     try {
-      // Busca TODOS os perfis da tabela evo_profiles (sem filtro de origin/account)
-      const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?limit=1000`;
+      // Constrói filtro WHERE para buscar apenas perfis deste origin + account_id
+      const whereCondition = `(chatwoot_origin,eq,${filterOrigin})~and(account_id,eq,${filterAccountId})`;
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?where=${encodeURIComponent(whereCondition)}&limit=1000`;
       
-      console.log('[Perfis] Consultando TODOS os perfis do NocoDB:', url);
+      console.log('[Perfis] 🔍 Consultando perfis FILTRADOS no NocoDB:');
+      console.log('[Perfis]   - chatwoot_origin:', filterOrigin);
+      console.log('[Perfis]   - account_id:', filterAccountId);
+      console.log('[Perfis]   - URL:', url);
       
       const data = await nocoGET(url);
       const list = Array.isArray(data?.list) ? data.list : [];
       
-      console.log('[Perfis] Resposta NocoDB completa:', list);
+      console.log('[Perfis] ✅ Resposta NocoDB:', list.length, 'perfil(is) encontrado(s)');
       
       const mappedProfiles = list.map((r: any) => ({
         Id: r.Id,
@@ -948,8 +960,6 @@ const Index = () => {
         contact_delay: Number(r.contact_delay) || 10,
         contact_variance: Number(r.contact_variance) || 10
       }));
-      
-      console.log('[Perfis] Perfis mapeados:', mappedProfiles.length);
       
       // Verifica o status de cada perfil na Evolution API
       const statusMap: Record<string, 'open' | 'close' | 'connecting' | null> = {};
@@ -976,21 +986,22 @@ const Index = () => {
       });
       
       setProfiles(sortedProfiles);
-      setStatus(`${list.length} perfil(is) carregado(s).`);
       
-      // Auto-seleciona o primeiro perfil do originCanon/accountId atual se existir
-      if (originCanon && accountId) {
-        const currentTenantProfile = sortedProfiles.find(
-          p => p.chatwoot_origin === originCanon && p.account_id === accountId
-        );
-        if (currentTenantProfile && !selectedProfileId) {
-          setSelectedProfileId(String(currentTenantProfile.Id));
-          console.log('[Perfis] Auto-selecionado perfil do tenant atual:', currentTenantProfile);
+      if (sortedProfiles.length > 0) {
+        setStatus(`${sortedProfiles.length} perfil(is) carregado(s) para esta conta.`);
+        
+        // Auto-seleciona o primeiro perfil (preferência para default=true)
+        if (!selectedProfileId) {
+          setSelectedProfileId(String(sortedProfiles[0].Id));
+          console.log('[Perfis] ✅ Auto-selecionado perfil:', sortedProfiles[0].name);
         }
+      } else {
+        setStatus('⚠️ Nenhum perfil encontrado para esta conta.');
+        setProfilesError('Nenhum perfil de conexão configurado para esta conta.');
       }
       
     } catch (err: any) {
-      console.error('[Perfis] Erro ao carregar:', err);
+      console.error('[Perfis] ❌ Erro ao carregar:', err);
       setProfilesError(err.message || 'Falha ao carregar perfis');
       setStatus('Erro ao carregar perfis.');
     } finally {
@@ -999,9 +1010,18 @@ const Index = () => {
   }
 
   useEffect(() => {
-    // Carrega perfis assim que a página carregar
-    loadProfiles();
-  }, []);
+    // CRÍTICO: Só carrega perfis DEPOIS de detectar origin e accountId da URL
+    if (originCanon && accountId) {
+      console.log('[Perfis] 🚀 Iniciando carregamento de perfis com filtros:');
+      console.log('[Perfis]   - originCanon:', originCanon);
+      console.log('[Perfis]   - accountId:', accountId);
+      loadProfiles(originCanon, accountId);
+    } else {
+      console.log('[Perfis] ⏳ Aguardando detecção completa da URL...');
+      console.log('[Perfis]   - originCanon:', originCanon || '❌ não detectado');
+      console.log('[Perfis]   - accountId:', accountId || '❌ não detectado');
+    }
+  }, [originCanon, accountId]);
 
   // Carrega etiquetas automaticamente quando tiver acesso ao Chatwoot
   useEffect(() => {
