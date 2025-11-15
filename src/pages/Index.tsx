@@ -596,6 +596,8 @@ const Index = () => {
       const u = new URL(raw);
       setParentPathInfo({ href: u.href, pathname: u.pathname });
       const ids = extractIdsFromUrl(u);
+      try { localStorage.setItem('cw_url_last', u.href); } catch {}
+      addDebug('manual', 'Processando URL informada', { url: u.href, ...ids });
       applyIds(ids.acc, ids.inbox, ids.conv);
       setDetectMsg('URL processada com sucesso.');
     } catch (e: any) {
@@ -629,6 +631,24 @@ const Index = () => {
     let detectedUrl = '';
     
     try {
+      // 0) Query param cw_url/chatwoot_url/url
+      try {
+        const sp = new URLSearchParams(window.location.search);
+        const pasted = sp.get('cw_url') || sp.get('chatwoot_url') || sp.get('url');
+        if (pasted) {
+          addDebug('init', 'IDs via query cw_url', { url: pasted });
+          try { localStorage.setItem('cw_url_last', pasted); } catch {}
+          parseAndApplyFromUrl(pasted);
+        } else {
+          // tenta última URL salva
+          const last = localStorage.getItem('cw_url_last') || '';
+          if (last) {
+            addDebug('init', 'Usando cw_url_last do localStorage', { url: last });
+            parseAndApplyFromUrl(last);
+          }
+        }
+      } catch {}
+
       // PRIMEIRO: Tentar ler window.top.location.href (se não estiver em cross-origin)
       try {
         if (window.top && window.top.location && window.top.location.href) {
@@ -3612,7 +3632,22 @@ const Index = () => {
                 <div className={conversationId ? 'text-green-600' : 'text-muted-foreground'}>
                   conversationId: {conversationId || '(vazio)'}
                 </div>
-              </div>
+                <div className="mt-2 space-y-1">
+                  <Input
+                    value={manualUrl}
+                    onChange={(e) => setManualUrl(e.target.value)}
+                    placeholder="Cole aqui a URL do Chatwoot (ex.: https://chat.seuapp/app/accounts/2/conversations/2176)"
+                    className="h-8 text-xs"
+                  />
+                  <div className="flex flex-wrap gap-1">
+                    <SmallBtn variant="secondary" onClick={() => parseAndApplyFromUrl(manualUrl)}>Detectar da URL colada</SmallBtn>
+                    <SmallBtn variant="secondary" onClick={tryReadTop}>Ler do topo</SmallBtn>
+                    <SmallBtn variant="secondary" onClick={() => { try { const last = localStorage.getItem('cw_url_last') || ''; if (last) parseAndApplyFromUrl(last); else setDetectMsg('Nenhuma URL salva.'); } catch {} }}>Usar última</SmallBtn>
+                    <SmallBtn variant="secondary" onClick={() => { try { if (window.parent && window.parent !== window) { const names = ['REQUEST_CHATWOOT_URL','GET_APP_CONTEXT','DASHBOARD_APP_CONTEXT','APP_CONTEXT_REQUEST','getContext','CW_GET_CONTEXT','chatwoot:getContext']; names.forEach((t) => window.parent.postMessage({ type: t, event: t }, '*')); } } catch {} }}>Solicitar contexto</SmallBtn>
+                  </div>
+                  {detectMsg && <div className="text-muted-foreground">{detectMsg}</div>}
+                </div>
+                </div>
               <div className="p-2 rounded border border-border">
                 <div className="font-semibold mb-1">⚙️ Perfil Carregado</div>
                 <div>hasChatwootAccess: {String(hasChatwootAccess)}</div>
