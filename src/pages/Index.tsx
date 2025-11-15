@@ -516,10 +516,17 @@ const Index = () => {
       }
 
       const chosen = filtered.find((x: any) => x.default) || filtered[0];
-      console.log('[tenantConfig] ✅ Tenant escolhido:', chosen);
-      addDebug('tenant', 'Tenant escolhido', {
-        ...chosen,
-        admin_apikey: mask(chosen?.admin_apikey)
+      console.log('[tenantConfig] ✅ Perfil detectado automaticamente:', chosen.name || chosen.Id);
+      console.log('[tenantConfig]   - account_id:', chosen.account_id);
+      console.log('[tenantConfig]   - chatwoot_origin:', chosen.chatwoot_origin);
+      console.log('[tenantConfig]   - admin_apikey:', chosen.admin_apikey ? '✅ configurado' : '❌ não configurado');
+      addDebug('tenant', 'Perfil detectado (automático)', {
+        id: chosen.Id,
+        name: chosen.name,
+        account_id: chosen.account_id,
+        chatwoot_origin: chosen.chatwoot_origin,
+        admin_apikey: mask(chosen?.admin_apikey),
+        is_active: chosen.is_active
       });
 
       // CORREÇÃO: NÃO sobrescreve o accountId da URL com o do tenant
@@ -623,123 +630,106 @@ const Index = () => {
     }
   }
 
-  // Detecta account_id, inbox_id e conversation_id
+  // DETECÇÃO PRIORITÁRIA: Captura IDs da URL ANTES de qualquer consulta
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
+    console.log('[URL DETECTION] ========== INÍCIO DA DETECÇÃO ==========');
+    
+    let acc = '';
+    let inbox = '';
+    let conv = '';
+    let detectedUrl = '';
+    
     try {
-      const currentUrl = window.location.href;
-      const ref = typeof document !== 'undefined' ? document.referrer : '';
-      
-      console.log('[URL DETECTION] ========== INÍCIO DA DETECÇÃO ==========');
-      console.log('[URL DETECTION] currentUrl:', currentUrl);
-      console.log('[URL DETECTION] referrer:', ref || '(vazio)');
-      addDebug('init', 'URL Detection started', { currentUrl, referrer: ref || '(nenhum)' });
-      
-      const u = new URL(currentUrl);
-      
-      // 1) Query string local
-      const params = u.searchParams;
-      let acc = params.get('account_id') || params.get('accountId') || params.get('account') || params.get('acc') || '';
-      let inbox = params.get('inbox_id') || params.get('inboxId') || params.get('inbox') || '';
-      let conv = params.get('conversation_id') || params.get('conversationId') || params.get('conversation') || '';
-
-      if (acc || inbox || conv) {
-        console.log('[URL DETECTION] IDs da query string:', { acc, inbox, conv });
-        addDebug('init', 'IDs from query string', { acc, inbox, conv });
-      }
-
-      // 2) Hash local
-      if ((!acc || !inbox || !conv) && u.hash) {
-        const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
-        const hashAcc = hashParams.get('account_id') || hashParams.get('accountId') || hashParams.get('account') || hashParams.get('acc') || '';
-        const hashInbox = hashParams.get('inbox_id') || hashParams.get('inboxId') || hashParams.get('inbox') || '';
-        const hashConv = hashParams.get('conversation_id') || hashParams.get('conversationId') || hashParams.get('conversation') || '';
-        
-        acc = acc || hashAcc;
-        inbox = inbox || hashInbox;
-        conv = conv || hashConv;
-        
-        if (hashAcc || hashInbox || hashConv) {
-          console.log('[URL DETECTION] IDs do hash:', { acc: hashAcc, inbox: hashInbox, conv: hashConv });
-          addDebug('init', 'IDs from hash', { acc: hashAcc, inbox: hashInbox, conv: hashConv });
-        }
-      }
-
-      // 3) Pathname local (quando app estiver sob o mesmo domínio)
-      if ((!acc || !inbox || !conv) && u.pathname) {
-        const idsLocal = extractIdsFromPath(u.pathname);
-        console.log('[URL DETECTION] Tentando extrair do pathname local:', u.pathname, '=> IDs:', idsLocal);
-        if (idsLocal.acc || idsLocal.inbox || idsLocal.conv) {
-          addDebug('init', 'IDs from local pathname', idsLocal);
-        }
-        if (!acc && idsLocal.acc) acc = idsLocal.acc;
-        if (!inbox && idsLocal.inbox) inbox = idsLocal.inbox;
-        if (!conv && idsLocal.conv) conv = idsLocal.conv;
-      }
-
-      // 4) Referrer (Chatwoot) — cobre os dois formatos
-      if (ref) {
-        try {
-          const ru = new URL(ref);
-          const rPath = ru.pathname || '';
-          console.log('[URL DETECTION] Referrer URL completa:', ref);
-          console.log('[URL DETECTION] Referrer pathname:', rPath || '(vazio)');
-          
-          if (rPath && rPath !== '/') {
-            const idsRef = extractIdsFromPath(rPath);
-            console.log('[URL DETECTION] IDs extraídos do referrer pathname:', idsRef);
-            
-            if (idsRef.acc || idsRef.inbox || idsRef.conv) {
-              addDebug('init', 'IDs from referrer pathname', { pathname: rPath, ...idsRef });
-            }
-            if (!acc && idsRef.acc) {
-              console.log('[URL DETECTION] ✅ account_id do referrer:', idsRef.acc);
-              acc = idsRef.acc;
-            }
-            if (!inbox && idsRef.inbox) {
-              console.log('[URL DETECTION] ✅ inbox_id do referrer:', idsRef.inbox);
-              inbox = idsRef.inbox;
-            }
-            if (!conv && idsRef.conv) {
-              console.log('[URL DETECTION] ✅ conversation_id do referrer:', idsRef.conv);
-              conv = idsRef.conv;
-            }
-          } else {
-            console.log('[URL DETECTION] ⚠️ Referrer pathname vazio ou /, não é possível extrair IDs');
-            addDebug('init', 'Referrer pathname vazio', { referrer: ref });
+      // PRIMEIRO: Tentar ler window.top.location.href (se não estiver em cross-origin)
+      try {
+        if (window.top && window.top.location && window.top.location.href) {
+          const topUrl = window.top.location.href;
+          if (topUrl && /^https?:\/\//i.test(topUrl) && topUrl.includes('/accounts/')) {
+            console.log('[URL DETECTION] ✅ Lendo window.top.location.href:', topUrl);
+            detectedUrl = topUrl;
+            const topUrlObj = new URL(topUrl);
+            const ids = extractIdsFromPath(topUrlObj.pathname);
+            if (ids.acc) acc = ids.acc;
+            if (ids.inbox) inbox = ids.inbox;
+            if (ids.conv) conv = ids.conv;
+            console.log('[URL DETECTION] IDs extraídos de window.top:', ids);
+            addDebug('init', 'IDs detectados de window.top.location', { url: topUrl, ...ids });
           }
-        } catch (e) {
-          console.error('[URL DETECTION] ❌ Erro ao processar referrer:', e);
-          addDebug('init', 'Erro ao processar referrer', { error: String(e) });
         }
-      } else {
-        console.log('[URL DETECTION] ⚠️ Nenhum referrer disponível');
+      } catch (topError) {
+        console.log('[URL DETECTION] ⚠️ Não foi possível acessar window.top (cross-origin esperado)');
       }
-
-      console.log('[URL DETECTION] ========== RESULTADO FINAL ==========');
-      console.log('[URL DETECTION] accountId:', acc || '❌ NÃO DETECTADO');
-      console.log('[URL DETECTION] inboxId:', inbox || '(vazio)');
-      console.log('[URL DETECTION] conversationId:', conv || '❌ NÃO DETECTADO');
-      addDebug('init', 'IDs detectados da URL (FINAIS)', { accountId: acc, inboxId: inbox, conversationId: conv });
       
+      // SEGUNDO: Se não conseguiu de window.top, tentar document.referrer
+      if (!acc && typeof document !== 'undefined' && document.referrer) {
+        const ref = document.referrer;
+        console.log('[URL DETECTION] Tentando document.referrer:', ref);
+        try {
+          const refUrl = new URL(ref);
+          if (refUrl.pathname && refUrl.pathname !== '/') {
+            const ids = extractIdsFromPath(refUrl.pathname);
+            if (ids.acc) acc = ids.acc;
+            if (ids.inbox) inbox = ids.inbox;
+            if (ids.conv) conv = ids.conv;
+            detectedUrl = ref;
+            console.log('[URL DETECTION] ✅ IDs extraídos do referrer:', ids);
+            addDebug('init', 'IDs detectados do document.referrer', { url: ref, ...ids });
+          }
+        } catch (refError) {
+          console.log('[URL DETECTION] ⚠️ Erro ao processar referrer:', refError);
+        }
+      }
+      
+      // TERCEIRO: Tentar URL atual (window.location.href)
+      if (!acc) {
+        const currentUrl = window.location.href;
+        console.log('[URL DETECTION] Tentando window.location.href:', currentUrl);
+        const currentUrlObj = new URL(currentUrl);
+        const ids = extractIdsFromPath(currentUrlObj.pathname);
+        if (ids.acc) acc = ids.acc;
+        if (ids.inbox) inbox = ids.inbox;
+        if (ids.conv) conv = ids.conv;
+        if (ids.acc) {
+          detectedUrl = currentUrl;
+          console.log('[URL DETECTION] ✅ IDs extraídos da URL atual:', ids);
+          addDebug('init', 'IDs detectados de window.location.href', { url: currentUrl, ...ids });
+        }
+      }
+      
+      console.log('[URL DETECTION] ========== RESULTADO FINAL DA DETECÇÃO ==========');
+      console.log('[URL DETECTION] URL detectada:', detectedUrl || '❌ NENHUMA');
+      console.log('[URL DETECTION] accountId:', acc || '❌ NÃO DETECTADO');
+      console.log('[URL DETECTION] inboxId:', inbox || '(não detectado)');
+      console.log('[URL DETECTION] conversationId:', conv || '(não detectado)');
+      
+      // Aplica os valores detectados
       if (acc) {
-        console.log('[URL DETECTION] 🎯 Definindo accountId:', acc);
+        console.log('[URL DETECTION] 🎯 Aplicando accountId:', acc);
         setAccountId(acc);
-        if (typeof window !== 'undefined') (window as any).__ACCOUNT_ID__ = acc;
+        (window as any).__ACCOUNT_ID__ = acc;
+        addDebug('detect', 'accountId detectado e aplicado', { accountId: acc });
       } else {
-        console.warn('[URL DETECTION] ⚠️ PROBLEMA: accountId NÃO FOI DETECTADO! Isso causará problemas na busca do perfil.');
+        console.error('[URL DETECTION] ❌ CRÍTICO: accountId NÃO FOI DETECTADO!');
+        console.error('[URL DETECTION] Sem accountId, não será possível carregar o perfil correto!');
+        addDebug('detect', 'ERRO: accountId não detectado', { 
+          warning: 'Perfil não poderá ser carregado automaticamente' 
+        });
       }
+      
       if (inbox) {
+        console.log('[URL DETECTION] 🎯 Aplicando inboxId:', inbox);
         setInboxId(inbox);
-        if (typeof window !== 'undefined') (window as any).__INBOX_ID__ = inbox;
+        (window as any).__INBOX_ID__ = inbox;
+        addDebug('detect', 'inboxId detectado e aplicado', { inboxId: inbox });
       }
+      
       if (conv) {
-        console.log('[URL DETECTION] 🎯 Definindo conversationId:', conv);
+        console.log('[URL DETECTION] 🎯 Aplicando conversationId:', conv);
         setConversationId(conv);
-        if (typeof window !== 'undefined') (window as any).__CONVERSATION_ID__ = conv;
-      } else {
-        console.warn('[URL DETECTION] ⚠️ PROBLEMA: conversationId NÃO FOI DETECTADO!');
+        (window as any).__CONVERSATION_ID__ = conv;
+        addDebug('detect', 'conversationId detectado e aplicado', { conversationId: conv });
       }
       
     } catch (e) {
@@ -3557,7 +3547,7 @@ const Index = () => {
                 <div>conversationId: {conversationId || '(vazio)'}</div>
               </div>
               <div className="p-2 rounded border border-border">
-                <div className="font-semibold mb-1">Tenant/CV</div>
+                <div className="font-semibold mb-1">Perfil detectado</div>
                 <div>hasChatwootAccess: {String(hasChatwootAccess)}</div>
                 <div>hasCvAccess: {String(hasCvAccess)}</div>
                 <div>admin_api_key: {mask(tenantConfig?.admin_apikey)}</div>
