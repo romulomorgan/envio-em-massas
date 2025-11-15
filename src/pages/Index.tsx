@@ -4314,7 +4314,13 @@ const Index = () => {
             </div>
             
             {status && (
-              <div className={`text-sm font-medium ${status.includes('✅') ? 'text-green-600' : status.includes('❌') ? 'text-red-600' : 'text-muted-foreground'}`}>
+              <div className={`p-4 rounded-lg text-sm font-semibold ${
+                status.includes('✅') 
+                  ? 'bg-green-50 text-green-700 border border-green-200' 
+                  : status.includes('❌') 
+                  ? 'bg-red-50 text-red-700 border border-red-200' 
+                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+              }`}>
                 {status}
               </div>
             )}
