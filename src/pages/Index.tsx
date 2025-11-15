@@ -225,6 +225,14 @@ const Index = () => {
   const [empsBusy, setEmpsBusy] = useState(false);
   const [empQuery, setEmpQuery] = useState('');
 
+  // Configurações de visibilidade das abas
+  const [tabsConfig, setTabsConfig] = useState({
+    Etiquetas: true,
+    Grupos: true,
+    Empreendimentos: true,
+    Importar: true
+  });
+
   // Contatos
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
@@ -1987,6 +1995,67 @@ const Index = () => {
     }
   }
 
+  // Carrega configurações de visibilidade das abas
+  async function loadTabsConfig() {
+    if (!selectedProfileId && !originCanon) {
+      console.log('[loadTabsConfig] Nenhum perfil selecionado ou origem detectada');
+      return;
+    }
+
+    try {
+      console.log('[loadTabsConfig] Buscando configurações das abas...');
+      
+      // Busca o perfil atual para pegar o chatwoot_origin
+      const selectedProfile = profiles.find(p => p.Id === selectedProfileId);
+      const origin = selectedProfile?.chatwoot_origin || originCanon;
+      
+      if (!origin) {
+        console.log('[loadTabsConfig] Origem não encontrada');
+        return;
+      }
+
+      // Busca na tabela empresas_tokens
+      const where = encodeURIComponent(`(chatwoot_origin,eq,${origin})`);
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_EMPRESAS_TOKENS_TABLE_ID}/records?where=${where}&limit=1&viewId=${NOCO_TENANT_VIEW_ID}`;
+      
+      const response = await nocoGET(url);
+      console.log('[loadTabsConfig] Resposta:', response);
+
+      if (response.list && response.list.length > 0) {
+        const config = response.list[0];
+        setTabsConfig({
+          Etiquetas: config.Etiquetas ?? true,
+          Grupos: config.Grupos ?? true,
+          Empreendimentos: config.Empreendimentos ?? true,
+          Importar: config.Importar ?? true
+        });
+        console.log('[loadTabsConfig] ✅ Configurações carregadas:', {
+          Etiquetas: config.Etiquetas,
+          Grupos: config.Grupos,
+          Empreendimentos: config.Empreendimentos,
+          Importar: config.Importar
+        });
+      } else {
+        console.log('[loadTabsConfig] Nenhuma configuração encontrada, usando padrões');
+        setTabsConfig({
+          Etiquetas: true,
+          Grupos: true,
+          Empreendimentos: true,
+          Importar: true
+        });
+      }
+    } catch (e) {
+      console.error('[loadTabsConfig] Erro:', e);
+      // Em caso de erro, deixa todas visíveis
+      setTabsConfig({
+        Etiquetas: true,
+        Grupos: true,
+        Empreendimentos: true,
+        Importar: true
+      });
+    }
+  }
+
   async function loadEmpreendimentos() {
     console.log('[loadEmpreendimentos] Iniciando...', { hasCvAccess, listMode });
     
@@ -3088,34 +3157,42 @@ const Index = () => {
                 
                 {/* Modo de seleção */}
                 <div className="flex gap-2 mt-4 mb-4 flex-wrap">
-                  <SmallBtn
-                    onClick={() => setListMode('usuarios')}
-                    variant={listMode === 'usuarios' ? 'primary' : 'secondary'}
-                  >
-                    Etiquetas/Usuários
-                  </SmallBtn>
-                  <SmallBtn
-                    onClick={() => setListMode('grupos')}
-                    variant={listMode === 'grupos' ? 'primary' : 'secondary'}
-                  >
-                    Grupos
-                  </SmallBtn>
-                  <SmallBtn
-                    onClick={() => setListMode('empreendimentos')}
-                    variant={listMode === 'empreendimentos' ? 'primary' : 'secondary'}
-                  >
-                    Empreendimentos
-                  </SmallBtn>
-                  <SmallBtn
-                    onClick={() => setListMode('importar')}
-                    variant={listMode === 'importar' ? 'primary' : 'secondary'}
-                  >
-                    Importar CSV/XLSX
-                  </SmallBtn>
+                  {tabsConfig.Etiquetas && (
+                    <SmallBtn
+                      onClick={() => setListMode('usuarios')}
+                      variant={listMode === 'usuarios' ? 'primary' : 'secondary'}
+                    >
+                      Etiquetas/Usuários
+                    </SmallBtn>
+                  )}
+                  {tabsConfig.Grupos && (
+                    <SmallBtn
+                      onClick={() => setListMode('grupos')}
+                      variant={listMode === 'grupos' ? 'primary' : 'secondary'}
+                    >
+                      Grupos
+                    </SmallBtn>
+                  )}
+                  {tabsConfig.Empreendimentos && (
+                    <SmallBtn
+                      onClick={() => setListMode('empreendimentos')}
+                      variant={listMode === 'empreendimentos' ? 'primary' : 'secondary'}
+                    >
+                      Empreendimentos
+                    </SmallBtn>
+                  )}
+                  {tabsConfig.Importar && (
+                    <SmallBtn
+                      onClick={() => setListMode('importar')}
+                      variant={listMode === 'importar' ? 'primary' : 'secondary'}
+                    >
+                      Importar CSV/XLSX
+                    </SmallBtn>
+                  )}
                 </div>
 
                 {/* Etiquetas/Usuários */}
-                {listMode === 'usuarios' && (
+                {tabsConfig.Etiquetas && listMode === 'usuarios' && (
                   <div className="space-y-3">
                     <div className="flex gap-2">
                       <input
@@ -3175,7 +3252,7 @@ const Index = () => {
                 )}
 
                 {/* Grupos */}
-                {listMode === 'grupos' && (
+                {tabsConfig.Grupos && listMode === 'grupos' && (
                   <div className="space-y-3">
                     <div className="flex gap-2">
                       <input
@@ -3241,7 +3318,7 @@ const Index = () => {
                 )}
 
                 {/* Empreendimentos */}
-                {listMode === 'empreendimentos' && (
+                {tabsConfig.Empreendimentos && listMode === 'empreendimentos' && (
                   <div className="space-y-3">
                     <div className="flex gap-2">
                       <input
@@ -3287,7 +3364,7 @@ const Index = () => {
                 )}
 
                 {/* Importar */}
-                {listMode === 'importar' && (
+                {tabsConfig.Importar && listMode === 'importar' && (
                   <div className="space-y-3">
                     <div className="text-sm text-muted-foreground mb-2">
                       Importar contatos (CSV/XLS/XLSX)
