@@ -194,7 +194,14 @@ const Index = () => {
 
   // Perfis
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [selectedProfileId, setSelectedProfileId] = useState(() => {
+    // Tenta carregar do localStorage ao iniciar
+    try {
+      return localStorage.getItem('selected_profile_id') || '';
+    } catch {
+      return '';
+    }
+  });
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [profilesError, setProfilesError] = useState('');
   const [profilesStatus, setProfilesStatus] = useState<Record<string, 'open' | 'close' | 'connecting' | null>>({});
@@ -1644,6 +1651,18 @@ const Index = () => {
     }, 1500);
     return () => window.clearTimeout(t);
   }, [showDetectProfileModal, selectedProfileId]);
+
+  // Salva o perfil selecionado no localStorage sempre que mudar
+  useEffect(() => {
+    if (selectedProfileId) {
+      try {
+        localStorage.setItem('selected_profile_id', selectedProfileId);
+        console.log('[localStorage] ✅ Perfil salvo no cache:', selectedProfileId);
+      } catch (e) {
+        console.error('[localStorage] ❌ Erro ao salvar perfil:', e);
+      }
+    }
+  }, [selectedProfileId]);
 
   // ========== FUNÇÕES DE CONTATOS ==========
   
