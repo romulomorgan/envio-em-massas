@@ -725,6 +725,68 @@ const Index = () => {
     }
   }, []);
 
+  // Re-tentativas agressivas: se não detectar via URL na primeira carga (devido a policy de referrer/cross-origin),
+  // re-tenta por alguns segundos e solicita contexto ao parent via postMessage com vários event names conhecidos.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (accountId) return; // já temos
+
+    let attempts = 0;
+    const max = 20; // ~20s
+    const timer = setInterval(() => {
+      attempts++;
+
+      // 1) Tenta novamente ler window.top.location.href
+      try {
+        const href = (window.top && (window.top as any).location && (window.top as any).location.href) as string;
+        if (href && /^https?:\/\//i.test(href)) {
+          try {
+            const u = new URL(href);
+            const ids = extractIdsFromUrl(u);
+            if (ids.acc) {
+              addDebug('retry', 'IDs extraídos de window.top em retry', { url: u.href, ...ids });
+              applyIds(ids.acc, ids.inbox, ids.conv);
+            }
+          } catch {}
+        }
+      } catch {}
+
+      // 2) Tenta novamente document.referrer (pode liberar o path após navegações internas)
+      try {
+        const ref = document.referrer || '';
+        if (ref && ref.includes('/accounts/')) {
+          const u = new URL(ref);
+          const ids = extractIdsFromUrl(u);
+          if (ids.acc) {
+            addDebug('retry', 'IDs extraídos de document.referrer em retry', { url: u.href, ...ids });
+            applyIds(ids.acc, ids.inbox, ids.conv);
+          }
+        }
+      } catch {}
+
+      // 3) Solicita contexto/URL ao parent com múltiplos event names
+      try {
+        if (window.parent && window.parent !== window) {
+          const msgs = [
+            { type: 'REQUEST_CHATWOOT_URL' },
+            { type: 'GET_APP_CONTEXT' },
+            { type: 'DASHBOARD_APP_CONTEXT' },
+            { event: 'APP_CONTEXT_REQUEST' },
+            { event: 'getContext' },
+            { type: 'getContext' }
+          ];
+          msgs.forEach((m) => window.parent.postMessage(m as any, '*'));
+        }
+      } catch {}
+
+      if (attempts >= max || (window as any).__ACCOUNT_ID__) {
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [accountId]);
+
   // Listener para receber IDs via postMessage (fallback quando referrer não traz o pathname)
   useEffect(() => {
     if (typeof window === 'undefined') return;
