@@ -4093,21 +4093,6 @@ const Index = () => {
                 <div className={conversationId ? 'text-green-600' : 'text-muted-foreground'}>
                   conversationId: {conversationId || '(vazio)'}
                 </div>
-                <div className="mt-2 space-y-1">
-                  <Input
-                    value={manualUrl}
-                    onChange={(e) => setManualUrl(e.target.value)}
-                    placeholder="Cole aqui a URL do Chatwoot (ex.: https://chat.seuapp/app/accounts/2/conversations/2176)"
-                    className="h-8 text-xs"
-                  />
-                  <div className="flex flex-wrap gap-1">
-                    <SmallBtn variant="secondary" onClick={() => parseAndApplyFromUrl(manualUrl)}>Detectar da URL colada</SmallBtn>
-                    <SmallBtn variant="secondary" onClick={tryReadTop}>Ler do topo</SmallBtn>
-                    <SmallBtn variant="secondary" onClick={() => { try { const last = localStorage.getItem('cw_url_last') || ''; if (last) parseAndApplyFromUrl(last); else setDetectMsg('Nenhuma URL salva.'); } catch {} }}>Usar última</SmallBtn>
-                    <SmallBtn variant="secondary" onClick={() => { try { if (window.parent && window.parent !== window) { const names = ['REQUEST_CHATWOOT_URL','GET_APP_CONTEXT','DASHBOARD_APP_CONTEXT','APP_CONTEXT_REQUEST','getContext','CW_GET_CONTEXT','chatwoot:getContext']; names.forEach((t) => window.parent.postMessage({ type: t, event: t }, '*')); } } catch {} }}>Solicitar contexto</SmallBtn>
-                  </div>
-                  {detectMsg && <div className="text-muted-foreground">{detectMsg}</div>}
-                </div>
                 </div>
               <div className="p-2 rounded border border-border">
                 <div className="font-semibold mb-1">⚙️ Perfil Carregado</div>
