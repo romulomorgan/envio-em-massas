@@ -1383,8 +1383,8 @@ const Index = () => {
           setUrlToDetect('');
         }, 2000);
         
-        // Recarrega lista de perfis
-        await loadProfiles(canon, accountId);
+        // Recarrega lista de perfis com account_id detectado
+        await loadProfiles(canon, (detectedAccountId as string) || accountId);
       } else {
         setStatus('❌ Nenhum perfil válido encontrado para esta URL');
         toast.error('Nenhum perfil foi encontrado para esta URL');
@@ -1632,6 +1632,18 @@ const Index = () => {
       });
     }
   }, [hasCvAccess, listMode, empresasTokensData]);
+
+  // Fecha o modal automaticamente quando um perfil for selecionado
+  useEffect(() => {
+    if (!showDetectProfileModal) return;
+    if (!selectedProfileId) return;
+    setStatus('✅ Detectado com sucesso!');
+    const t = window.setTimeout(() => {
+      setShowDetectProfileModal(false);
+      setUrlToDetect('');
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [showDetectProfileModal, selectedProfileId]);
 
   // ========== FUNÇÕES DE CONTATOS ==========
   
