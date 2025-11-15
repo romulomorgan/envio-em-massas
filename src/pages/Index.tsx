@@ -1176,17 +1176,29 @@ const Index = () => {
       
       console.log('[Auto-Detect] ✅ Encontrados', list.length, 'perfis para testar');
       
+      // PRIORIZA perfis com default=true (coloca eles primeiro na lista)
+      const sortedList = [...list].sort((a, b) => {
+        const aDefault = a.default === true || a.default === 'true' || a.default === 1;
+        const bDefault = b.default === true || b.default === 'true' || b.default === 1;
+        if (aDefault && !bDefault) return -1;
+        if (!aDefault && bDefault) return 1;
+        return 0;
+      });
+      
+      console.log('[Auto-Detect] 🎯 Perfis ordenados (defaults primeiro)');
+      
       // Testa cada perfil contra a API do Chatwoot
-      for (const profile of list) {
+      for (const profile of sortedList) {
         const testAccountId = profile.account_id;
         const testAdminApiKey = profile.admin_apikey || profile.adimin_apikey || '';
+        const isDefault = profile.default === true || profile.default === 'true' || profile.default === 1;
         
         if (!testAccountId || !testAdminApiKey) {
           console.log('[Auto-Detect] ⏭️ Perfil', profile.name, '- dados incompletos (sem account_id ou admin_apikey)');
           continue;
         }
         
-        console.log('[Auto-Detect] 🧪 Testando perfil:', profile.name, '(account_id:', testAccountId, ')');
+        console.log('[Auto-Detect] 🧪 Testando perfil:', profile.name, isDefault ? '⭐ [DEFAULT]' : '', '(account_id:', testAccountId, ')');
         
         try {
           // Testa contra API do Chatwoot: GET /api/v1/profile
@@ -1201,7 +1213,7 @@ const Index = () => {
           
           if (response.ok) {
             const profileData = await response.json();
-            console.log('[Auto-Detect] ✅ PERFIL VÁLIDO ENCONTRADO!', profile.name);
+            console.log('[Auto-Detect] ✅ PERFIL VÁLIDO ENCONTRADO!', profile.name, isDefault ? '⭐ (DEFAULT)' : '');
             console.log('[Auto-Detect] 📊 Dados retornados:', profileData);
             
             // Atualiza as variáveis globais com o perfil válido
@@ -1218,16 +1230,22 @@ const Index = () => {
               }
             } catch {}
             
-            setStatus(`✅ Perfil "${profile.name}" detectado e validado automaticamente.`);
+            const statusMsg = isDefault 
+              ? `⭐ Perfil padrão "${profile.name}" selecionado automaticamente`
+              : `✅ Perfil "${profile.name}" detectado e validado`;
+            setStatus(statusMsg);
+            
             addDebug('auto-detect', 'Perfil válido encontrado', { 
               profileName: profile.name, 
               accountId: testAccountId,
-              inboxId: profile.inbox_id 
+              inboxId: profile.inbox_id,
+              isDefault 
             });
             
             return { 
               accountId: String(testAccountId), 
-              inboxId: profile.inbox_id ? String(profile.inbox_id) : '' 
+              inboxId: profile.inbox_id ? String(profile.inbox_id) : '',
+              isDefault
             };
           } else {
             console.log('[Auto-Detect] ❌ Perfil', profile.name, '- API retornou status:', response.status);
