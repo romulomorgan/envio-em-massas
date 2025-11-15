@@ -179,6 +179,7 @@ const Index = () => {
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [profilesError, setProfilesError] = useState('');
+  const [profilesStatus, setProfilesStatus] = useState<Record<string, 'open' | 'close' | 'connecting' | null>>({});
 
   // Campanha
   const [campaignName, setCampaignName] = useState('Campanha');
@@ -918,19 +919,14 @@ const Index = () => {
   }, []);
 
   async function loadProfiles() {
-    if (!originCanon || !accountId) {
-      console.log('[Perfis] Aguardando originCanon e accountId...', { originCanon, accountId });
-      return;
-    }
-    
     setLoadingProfiles(true);
     setProfilesError('');
     
     try {
-      const where = `(chatwoot_origin,eq,${originCanon})~and(account_id,eq,${accountId})`;
-      const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?where=${encodeURIComponent(where)}&limit=1000`;
+      // Busca TODOS os perfis da tabela evo_profiles (sem filtro de origin/account)
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_TABLE_PROFILES_ID}/records?limit=1000`;
       
-      console.log('[Perfis] Consultando NocoDB:', { originCanon, accountId, url });
+      console.log('[Perfis] Consultando TODOS os perfis do NocoDB:', url);
       
       const data = await nocoGET(url);
       const list = Array.isArray(data?.list) ? data.list : [];
@@ -955,29 +951,44 @@ const Index = () => {
         contact_variance: Number(r.contact_variance) || 10
       }));
       
-      console.log('[Perfis] Perfis mapeados:', mappedProfiles.map(p => ({
-        Id: p.Id,
-        name: p.name,
-        evo_base_url: p.evo_base_url ? '✅' : '❌',
-        evo_instance: p.evo_instance ? '✅' : '❌',
-        evo_apikey: p.evo_apikey ? '✅' : '❌',
-        is_active: p.is_active
-      })));
+      console.log('[Perfis] Perfis mapeados:', mappedProfiles.length);
       
-      // Ordena perfis: perfil com default=true primeiro
+      // Verifica o status de cada perfil na Evolution API
+      const statusMap: Record<string, 'open' | 'close' | 'connecting' | null> = {};
+      await Promise.all(
+        mappedProfiles.map(async (profile) => {
+          try {
+            const status = await fetchConnectionStatus(profile);
+            statusMap[String(profile.Id)] = status;
+            console.log(`[Perfis] Status de ${profile.name}:`, status);
+          } catch (e) {
+            console.error(`[Perfis] Erro ao verificar status de ${profile.name}:`, e);
+            statusMap[String(profile.Id)] = null;
+          }
+        })
+      );
+      
+      setProfilesStatus(statusMap);
+      
+      // Ordena perfis: perfil com default=true primeiro, depois por nome
       const sortedProfiles = mappedProfiles.sort((a, b) => {
         if (a.default && !b.default) return -1;
         if (!a.default && b.default) return 1;
-        return 0;
+        return (a.name || '').localeCompare(b.name || '');
       });
       
       setProfiles(sortedProfiles);
       setStatus(`${list.length} perfil(is) carregado(s).`);
       
-      // Auto-seleciona o primeiro perfil (que será o default se existir)
-      if (sortedProfiles.length > 0 && !selectedProfileId) {
-        setSelectedProfileId(String(sortedProfiles[0].Id));
-        console.log('[Perfis] Auto-selecionado:', sortedProfiles[0]);
+      // Auto-seleciona o primeiro perfil do originCanon/accountId atual se existir
+      if (originCanon && accountId) {
+        const currentTenantProfile = sortedProfiles.find(
+          p => p.chatwoot_origin === originCanon && p.account_id === accountId
+        );
+        if (currentTenantProfile && !selectedProfileId) {
+          setSelectedProfileId(String(currentTenantProfile.Id));
+          console.log('[Perfis] Auto-selecionado perfil do tenant atual:', currentTenantProfile);
+        }
       }
       
     } catch (err: any) {
@@ -990,10 +1001,9 @@ const Index = () => {
   }
 
   useEffect(() => {
-    if (accountId && originCanon) {
-      loadProfiles();
-    }
-  }, [accountId, originCanon]);
+    // Carrega perfis assim que a página carregar
+    loadProfiles();
+  }, []);
 
   // Carrega etiquetas automaticamente quando tiver acesso ao Chatwoot
   useEffect(() => {
@@ -2441,11 +2451,16 @@ const Index = () => {
                       disabled={loadingProfiles}
                     >
                       <option value="">Selecione um perfil</option>
-                      {profiles.map((p) => (
-                        <option key={p.Id} value={p.Id}>
-                          {p.name}
-                        </option>
-                      ))}
+                      {profiles.map((p) => {
+                        const status = profilesStatus[String(p.Id)];
+                        const statusText = status === 'open' ? '🟢 ON' : status === 'close' ? '🔴 OFF' : status === 'connecting' ? '🟡 CONECTANDO' : '⚪ OFF';
+                        const displayText = `${p.name} — ${p.evo_instance} • ${statusText}`;
+                        return (
+                          <option key={p.Id} value={p.Id}>
+                            {displayText}
+                          </option>
+                        );
+                      })}
                     </select>
                   </Field>
                   <Field label="Nome da campanha">
