@@ -608,14 +608,129 @@ const Index = () => {
     addDebug('detect', 'IDs applied from URL', { accountId: acc, inboxId: inbox, conversationId: conv });
   }
 
+  // ============================================================================
+  // 🚀 TÉCNICA ROBUSTA DE EXTRAÇÃO DE PARÂMETROS (Cascata com múltiplos fallbacks)
+  // ============================================================================
+  function extractContextRobust() {
+    try {
+      const pathname = window.location.pathname || '';
+      const search = window.location.search || '';
+      const hash = window.location.hash || '';
+      const qs = new URLSearchParams(search);
+      const hs = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+      
+      // Helper para buscar em query/hash
+      const get = (keys: string[]) => {
+        for (const k of keys) {
+          const v = qs.get(k) || hs.get(k);
+          if (v !== null && v !== undefined && String(v).trim() !== '') 
+            return String(v).trim();
+        }
+        return null;
+      };
+      
+      // 1️⃣ EXTRAÇÃO PRIMÁRIA: Regex no Pathname
+      // Funciona para: /accounts/2/inbox/9/conversations/1428 e /accounts/2/conversations/1429
+      const accMatch = pathname.match(/\/accounts?\/(\d+)/i);
+      const convMatch = pathname.match(/\/conversations?\/(\d+)/i);
+      const inboxMatch = pathname.match(/\/inbox\/(\d+)/i);
+      
+      let acc = accMatch ? accMatch[1] : null;
+      let conv = convMatch ? convMatch[1] : null;
+      let inbox = inboxMatch ? inboxMatch[1] : null;
+      
+      console.log('[extractContextRobust] 1️⃣ Pathname extraction:', { pathname, acc, conv, inbox });
+      
+      // 2️⃣ FALLBACK: document.referrer (para iframes/embeds)
+      if ((!acc || !conv) && document.referrer) {
+        try {
+          const refUrl = new URL(document.referrer);
+          const refPath = refUrl.pathname || '';
+          const accR = refPath.match(/\/accounts?\/(\d+)/i);
+          const convR = refPath.match(/\/conversations?\/(\d+)/i);
+          const inboxR = refPath.match(/\/inbox\/(\d+)/i);
+          
+          if (!acc && accR) acc = accR[1];
+          if (!conv && convR) conv = convR[1];
+          if (!inbox && inboxR) inbox = inboxR[1];
+          
+          console.log('[extractContextRobust] 2️⃣ Referrer fallback:', { refPath, acc, conv, inbox });
+        } catch (e) {
+          console.log('[extractContextRobust] ⚠️ Erro no referrer fallback:', e);
+        }
+      }
+      
+      // 3️⃣ FALLBACK FINAL: Query String/Hash
+      if (!acc) acc = get(['acc','account_id','accountId','account']);
+      if (!conv) conv = get(['conv','conversation_id','conversationId','id']);
+      if (!inbox) inbox = get(['inbox','inbox_id','inboxId']);
+      
+      console.log('[extractContextRobust] 3️⃣ Query/Hash fallback:', { acc, conv, inbox });
+      
+      // 4️⃣ EXTRAÇÃO DO ORIGIN (cascata completa)
+      let origin = get(['origin','chatwoot_origin','chatutilorigin','chatuiltorigin','chatuteorigin']);
+      
+      // Tenta referrer para origin
+      if (!origin && document.referrer) {
+        try { 
+          const refUrl = new URL(document.referrer);
+          origin = refUrl.origin;  // Ex: https://iudpgestao.com.br
+          console.log('[extractContextRobust] 4️⃣ Origin do referrer:', origin);
+        } catch {}
+      }
+      
+      // Fallback: location.origin
+      if (!origin) origin = window.location.origin;
+      
+      console.log('[extractContextRobust] ========== RESULTADO FINAL ==========');
+      console.log('[extractContextRobust] accountId:', acc || '❌');
+      console.log('[extractContextRobust] conversationId:', conv || '(não detectado)');
+      console.log('[extractContextRobust] inboxId:', inbox || '(não detectado)');
+      console.log('[extractContextRobust] origin:', origin || '❌');
+      
+      return { 
+        acc: acc || '', 
+        origin: origin || '', 
+        conv: conv || '',
+        inbox: inbox || ''
+      };
+    } catch (e) {
+      console.error('[extractContextRobust] ❌ Erro geral:', e);
+      return { acc: '', origin: '', conv: '', inbox: '' };
+    }
+  }
+
   function parseAndApplyFromUrl(raw: string) {
     try {
       const u = new URL(raw);
       setParentPathInfo({ href: u.href, pathname: u.pathname });
-      const ids = extractIdsFromUrl(u);
+      
+      // Usa a mesma lógica robusta de extração
+      const pathname = u.pathname || '';
+      const qs = new URLSearchParams(u.search);
+      const hs = new URLSearchParams(u.hash.startsWith('#') ? u.hash.slice(1) : u.hash);
+      
+      const get = (keys: string[]) => {
+        for (const k of keys) {
+          const v = qs.get(k) || hs.get(k);
+          if (v !== null && v !== undefined && String(v).trim() !== '') 
+            return String(v).trim();
+        }
+        return null;
+      };
+      
+      // Regex extraction
+      const accMatch = pathname.match(/\/accounts?\/(\d+)/i);
+      const convMatch = pathname.match(/\/conversations?\/(\d+)/i);
+      const inboxMatch = pathname.match(/\/inbox\/(\d+)/i);
+      
+      const acc = accMatch ? accMatch[1] : get(['acc','account_id','accountId','account']);
+      const conv = convMatch ? convMatch[1] : get(['conv','conversation_id','conversationId','id']);
+      const inbox = inboxMatch ? inboxMatch[1] : get(['inbox','inbox_id','inboxId']);
+      
       try { localStorage.setItem('cw_url_last', u.href); } catch {}
-      addDebug('manual', 'Processando URL informada', { url: u.href, ...ids });
-      applyIds(ids.acc, ids.inbox, ids.conv);
+      addDebug('manual', 'Processando URL informada', { url: u.href, acc, conv, inbox });
+      applyIds(acc || '', inbox || '', conv || '');
       setDetectMsg('URL processada com sucesso.');
     } catch (e: any) {
       setDetectMsg('URL inválida.');
@@ -636,130 +751,83 @@ const Index = () => {
     }
   }
 
-  // DETECÇÃO PRIORITÁRIA: Captura IDs da URL ANTES de qualquer consulta
+  // ============================================================================
+  // 🚀 DETECÇÃO AUTOMÁTICA ROBUSTA (executa uma única vez no mount)
+  // Usa a técnica de cascata com múltiplos fallbacks
+  // ============================================================================
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    console.log('[URL DETECTION] ========== INÍCIO DA DETECÇÃO ==========');
+    console.log('[INIT] ========== INICIALIZANDO DETECÇÃO ROBUSTA ==========');
     
-    let acc = '';
-    let inbox = '';
-    let conv = '';
-    let detectedUrl = '';
-    
+    // 0️⃣ PRIORIDADE MÁXIMA: Query param cw_url/chatwoot_url/url (URL passada manualmente)
     try {
-      // 0) Query param cw_url/chatwoot_url/url
+      const sp = new URLSearchParams(window.location.search);
+      const pasted = sp.get('cw_url') || sp.get('chatwoot_url') || sp.get('url');
+      if (pasted) {
+        console.log('[INIT] ✅ Query param encontrado, processando:', pasted);
+        addDebug('init', 'URL via query param', { url: pasted });
+        try { localStorage.setItem('cw_url_last', pasted); } catch {}
+        parseAndApplyFromUrl(pasted);
+        return; // Prioridade máxima, interrompe aqui
+      }
+    } catch {}
+    
+    // 1️⃣ Executa a extração robusta (pathname + referrer + query/hash)
+    const result = extractContextRobust();
+    
+    console.log('[INIT] Resultado da extração robusta:', result);
+    
+    // 2️⃣ Aplica os resultados ou tenta fallback do localStorage
+    if (result.acc) {
+      console.log('[INIT] ✅ Aplicando accountId:', result.acc);
+      setAccountId(result.acc);
+      (window as any).__ACCOUNT_ID__ = result.acc;
+      addDebug('detect', 'accountId detectado automaticamente', { accountId: result.acc });
+      try { localStorage.setItem('cw_account_id', result.acc); } catch {}
+    } else {
+      console.error('[INIT] ❌ accountId NÃO DETECTADO pela técnica robusta!');
+      console.error('[INIT] Tentando fallback do localStorage...');
       try {
-        const sp = new URLSearchParams(window.location.search);
-        const pasted = sp.get('cw_url') || sp.get('chatwoot_url') || sp.get('url');
-        if (pasted) {
-          addDebug('init', 'IDs via query cw_url', { url: pasted });
-          try { localStorage.setItem('cw_url_last', pasted); } catch {}
-          parseAndApplyFromUrl(pasted);
+        const savedAcc = localStorage.getItem('cw_account_id');
+        if (savedAcc) {
+          console.log('[INIT] ✅ Recuperado do localStorage:', savedAcc);
+          setAccountId(savedAcc);
+          (window as any).__ACCOUNT_ID__ = savedAcc;
+          addDebug('detect', 'accountId recuperado do localStorage', { accountId: savedAcc });
         } else {
-          // tenta última URL salva
-          const last = localStorage.getItem('cw_url_last') || '';
-          if (last) {
-            addDebug('init', 'Usando cw_url_last do localStorage', { url: last });
-            parseAndApplyFromUrl(last);
+          // Último recurso: tenta última URL salva
+          const lastUrl = localStorage.getItem('cw_url_last');
+          if (lastUrl) {
+            console.log('[INIT] 🔄 Tentando última URL salva:', lastUrl);
+            addDebug('init', 'Usando cw_url_last como último recurso', { url: lastUrl });
+            parseAndApplyFromUrl(lastUrl);
           }
         }
       } catch {}
-
-      // PRIMEIRO: Tentar ler window.top.location.href (se não estiver em cross-origin)
-      try {
-        if (window.top && window.top.location && window.top.location.href) {
-          const topUrl = window.top.location.href;
-          if (topUrl && /^https?:\/\//i.test(topUrl) && topUrl.includes('/accounts/')) {
-            console.log('[URL DETECTION] ✅ Lendo window.top.location.href:', topUrl);
-            detectedUrl = topUrl;
-            const topUrlObj = new URL(topUrl);
-            const ids = extractIdsFromUrl(topUrlObj);
-            if (ids.acc) acc = ids.acc;
-            if (ids.inbox) inbox = ids.inbox;
-            if (ids.conv) conv = ids.conv;
-            console.log('[URL DETECTION] IDs extraídos de window.top:', ids);
-            addDebug('init', 'IDs detectados de window.top.location', { url: topUrl, ...ids });
-          }
-        }
-      } catch (topError) {
-        console.log('[URL DETECTION] ⚠️ Não foi possível acessar window.top (cross-origin esperado)');
-      }
-      
-      // SEGUNDO: Se não conseguiu de window.top, tentar document.referrer
-      if (!acc && typeof document !== 'undefined' && document.referrer) {
-        const ref = document.referrer;
-        console.log('[URL DETECTION] Tentando document.referrer:', ref);
-        try {
-          const refUrl = new URL(ref);
-          if (refUrl.pathname && refUrl.pathname !== '/') {
-            const ids = extractIdsFromUrl(refUrl);
-            if (ids.acc) acc = ids.acc;
-            if (ids.inbox) inbox = ids.inbox;
-            if (ids.conv) conv = ids.conv;
-            detectedUrl = ref;
-            console.log('[URL DETECTION] ✅ IDs extraídos do referrer:', ids);
-            addDebug('init', 'IDs detectados do document.referrer', { url: ref, ...ids });
-          }
-        } catch (refError) {
-          console.log('[URL DETECTION] ⚠️ Erro ao processar referrer:', refError);
-        }
-      }
-      
-      // TERCEIRO: Tentar URL atual (window.location.href)
-      if (!acc) {
-        const currentUrl = window.location.href;
-        console.log('[URL DETECTION] Tentando window.location.href:', currentUrl);
-        const currentUrlObj = new URL(currentUrl);
-        const ids = extractIdsFromUrl(currentUrlObj);
-        if (ids.acc) acc = ids.acc;
-        if (ids.inbox) inbox = ids.inbox;
-        if (ids.conv) conv = ids.conv;
-        if (ids.acc) {
-          detectedUrl = currentUrl;
-          console.log('[URL DETECTION] ✅ IDs extraídos da URL atual:', ids);
-          addDebug('init', 'IDs detectados de window.location.href', { url: currentUrl, ...ids });
-        }
-      }
-      
-      console.log('[URL DETECTION] ========== RESULTADO FINAL DA DETECÇÃO ==========');
-      console.log('[URL DETECTION] URL detectada:', detectedUrl || '❌ NENHUMA');
-      console.log('[URL DETECTION] accountId:', acc || '❌ NÃO DETECTADO');
-      console.log('[URL DETECTION] inboxId:', inbox || '(não detectado)');
-      console.log('[URL DETECTION] conversationId:', conv || '(não detectado)');
-      
-      // Aplica os valores detectados
-      if (acc) {
-        console.log('[URL DETECTION] 🎯 Aplicando accountId:', acc);
-        setAccountId(acc);
-        (window as any).__ACCOUNT_ID__ = acc;
-        addDebug('detect', 'accountId detectado e aplicado', { accountId: acc });
-      } else {
-        console.error('[URL DETECTION] ❌ CRÍTICO: accountId NÃO FOI DETECTADO!');
-        console.error('[URL DETECTION] Sem accountId, não será possível carregar o perfil correto!');
-        addDebug('detect', 'ERRO: accountId não detectado', { 
-          warning: 'Perfil não poderá ser carregado automaticamente' 
-        });
-      }
-      
-      if (inbox) {
-        console.log('[URL DETECTION] 🎯 Aplicando inboxId:', inbox);
-        setInboxId(inbox);
-        (window as any).__INBOX_ID__ = inbox;
-        addDebug('detect', 'inboxId detectado e aplicado', { inboxId: inbox });
-      }
-      
-      if (conv) {
-        console.log('[URL DETECTION] 🎯 Aplicando conversationId:', conv);
-        setConversationId(conv);
-        (window as any).__CONVERSATION_ID__ = conv;
-        addDebug('detect', 'conversationId detectado e aplicado', { conversationId: conv });
-      }
-      
-    } catch (e) {
-      console.error('[URL DETECTION] ❌ Erro geral na detecção de URL:', e);
-      addDebug('init', 'Erro geral na detecção de URL', { error: String(e) });
     }
+    
+    if (result.conv) {
+      console.log('[INIT] ✅ Aplicando conversationId:', result.conv);
+      setConversationId(result.conv);
+      (window as any).__CONVERSATION_ID__ = result.conv;
+      addDebug('detect', 'conversationId detectado', { conversationId: result.conv });
+    }
+    
+    if (result.inbox) {
+      console.log('[INIT] ✅ Aplicando inboxId:', result.inbox);
+      setInboxId(result.inbox);
+      (window as any).__INBOX_ID__ = result.inbox;
+      addDebug('detect', 'inboxId detectado', { inboxId: result.inbox });
+    }
+    
+    console.log('[INIT] ========== DETECÇÃO CONCLUÍDA ==========');
+    console.log('[INIT] Status final:', {
+      accountId: result.acc || '❌',
+      conversationId: result.conv || '(não detectado)',
+      inboxId: result.inbox || '(não detectado)',
+      origin: result.origin
+    });
   }, []);
 
   // Re-tentativas agressivas: se não detectar via URL na primeira carga (devido a policy de referrer/cross-origin),
