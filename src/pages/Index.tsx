@@ -2161,8 +2161,14 @@ const Index = () => {
     
     setMonitorBusy(true);
     try {
-      // BUSCA PRECISA: Sempre com account_id AND chatwoot_origin
-      const where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
+      // BUSCA PRECISA: Sempre com account_id AND chatwoot_origin AND profile_id
+      let where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
+      
+      // Filtrar por perfil de envio selecionado
+      if (selectedProfileId) {
+        where += `~and(profile_id,eq,${selectedProfileId})`;
+      }
+      
       const offset = (page - 1) * pageSize;
       const sortField = queueSort.field === 'Id' ? 'Id' : queueSort.field;
       const sortDir = queueSort.dir === 'desc' ? '-' : '';
@@ -2174,6 +2180,7 @@ const Index = () => {
       console.log('[Monitor] 🔍 Consultando campanhas com filtros precisos:');
       console.log('[Monitor]   - accountId:', accountId);
       console.log('[Monitor]   - originCanon:', originCanon);
+      console.log('[Monitor]   - selectedProfileId:', selectedProfileId || 'TODOS');
       console.log('[Monitor]   - URL:', url);
       
       const data = await nocoGET(url);
@@ -2207,7 +2214,7 @@ const Index = () => {
     if (tab === 'monitor' && accountId && originCanon) {
       loadMonitor();
     }
-  }, [tab, page, queueSort, accountId, originCanon]);
+  }, [tab, page, queueSort, accountId, originCanon, selectedProfileId]);
 
   // Atualização automática do monitor (intervalo)
   useEffect(() => {
