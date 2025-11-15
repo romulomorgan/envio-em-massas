@@ -1180,7 +1180,7 @@ const Index = () => {
   }, []);
 
   // Nova função: Auto-detecta perfil válido testando contra API do Chatwoot
-  async function autoDetectValidProfile(filterOrigin: string) {
+  async function autoDetectValidProfile(filterOrigin: string): Promise<boolean> {
     console.log('[Auto-Detect] 🔍 Iniciando busca de perfil válido para origin:', filterOrigin);
     
     try {
@@ -1240,12 +1240,17 @@ const Index = () => {
               setInboxId(String(profile.inbox_id));
             }
             
+            // IMPORTANTE: Seleciona o perfil detectado no dropdown
+            setSelectedProfileId(String(profile.Id));
+            console.log('[Auto-Detect] 🎯 Perfil selecionado no dropdown:', profile.Id, '-', profile.name);
+            
             // Salva no localStorage
             try {
               localStorage.setItem('chatwoot_account_id', String(testAccountId));
               if (profile.inbox_id) {
                 localStorage.setItem('chatwoot_inbox_id', String(profile.inbox_id));
               }
+              localStorage.setItem('selected_profile_id', String(profile.Id));
             } catch {}
             
             const statusMsg = isDefault 
@@ -1260,25 +1265,20 @@ const Index = () => {
               isDefault 
             });
             
-            return { 
-              accountId: String(testAccountId), 
-              inboxId: profile.inbox_id ? String(profile.inbox_id) : '',
-              isDefault
-            };
+            return true; // Sucesso
           } else {
-            console.log('[Auto-Detect] ❌ Perfil', profile.name, '- API retornou status:', response.status);
+            console.log('[Auto-Detect] ❌ Perfil inválido (HTTP', response.status, '):', profile.name);
           }
         } catch (err) {
-          console.error('[Auto-Detect] ❌ Erro ao testar perfil', profile.name, ':', err);
+          console.error('[Auto-Detect] ❌ Erro ao testar perfil:', profile.name, err);
         }
       }
       
       console.warn('[Auto-Detect] ⚠️ Nenhum perfil válido encontrado após testar todos');
-      return null;
-      
-    } catch (err: any) {
-      console.error('[Auto-Detect] ❌ Erro fatal:', err);
-      return null;
+      return false;
+    } catch (error) {
+      console.error('[Auto-Detect] ❌ Erro geral ao auto-detectar:', error);
+      return false;
     }
   }
 
@@ -1366,18 +1366,20 @@ const Index = () => {
       const result = await autoDetectValidProfile(canon);
       
       if (result) {
-        setStatus(`✅ Perfil detectado: Account ${result.accountId}`);
-        setShowDetectProfileModal(false);
-        setUrlToDetect('');
+        setStatus('✅ Detectado com sucesso!');
+        toast.success('Perfil detectado e configurado com sucesso!');
         
-        // Atualiza interface
-        setAccountId(result.accountId);
-        if (result.inboxId) setInboxId(result.inboxId);
+        // Fecha modal após 2 segundos
+        setTimeout(() => {
+          setShowDetectProfileModal(false);
+          setUrlToDetect('');
+        }, 2000);
         
         // Recarrega lista de perfis
-        await loadProfiles(canon, result.accountId);
+        await loadProfiles(canon, accountId);
       } else {
         setStatus('❌ Nenhum perfil válido encontrado para esta URL');
+        toast.error('Nenhum perfil foi encontrado para esta URL');
       }
       
     } catch (err) {
@@ -2471,12 +2473,20 @@ const Index = () => {
     
     setMonitorBusy(true);
     try {
-      // BUSCA PRECISA: Sempre com account_id AND chatwoot_origin AND profile_id
+      // BUSCA PRECISA: Sempre com account_id AND chatwoot_origin
       let where = `(account_id,eq,${accountId})~and(chatwoot_origin,eq,${originCanon})`;
       
-      // Filtrar por perfil de envio selecionado
-      if (selectedProfileId) {
-        where += `~and(profile_id,eq,${selectedProfileId})`;
+      // Filtrar por inbox_id do perfil selecionado
+      if (selectedProfileId && profiles.length > 0) {
+        const selectedProfile = profiles.find(p => String(p.Id) === String(selectedProfileId));
+        if (selectedProfile && selectedProfile.inbox_id) {
+          where += `~and(inbox_id,eq,${selectedProfile.inbox_id})`;
+          console.log('[Monitor] 🔍 Filtrando por inbox_id do perfil selecionado:', selectedProfile.inbox_id);
+        }
+      } else if (inboxId) {
+        // Se não houver perfil selecionado mas tiver inbox_id detectado, usa ele
+        where += `~and(inbox_id,eq,${inboxId})`;
+        console.log('[Monitor] 🔍 Filtrando por inbox_id detectado:', inboxId);
       }
       
       const offset = (page - 1) * pageSize;
@@ -2490,7 +2500,8 @@ const Index = () => {
       console.log('[Monitor] 🔍 Consultando campanhas com filtros precisos:');
       console.log('[Monitor]   - accountId:', accountId);
       console.log('[Monitor]   - originCanon:', originCanon);
-      console.log('[Monitor]   - selectedProfileId:', selectedProfileId || 'TODOS');
+      console.log('[Monitor]   - inboxId:', inboxId || 'não detectado');
+      console.log('[Monitor]   - selectedProfileId:', selectedProfileId || 'NENHUM');
       console.log('[Monitor]   - URL:', url);
       
       const data = await nocoGET(url);
@@ -4213,6 +4224,12 @@ const Index = () => {
                 💡 Cole aqui a URL completa da página que você está usando
               </p>
             </div>
+            
+            {status && (
+              <div className={`text-sm font-medium ${status.includes('✅') ? 'text-green-600' : status.includes('❌') ? 'text-red-600' : 'text-muted-foreground'}`}>
+                {status}
+              </div>
+            )}
           </div>
           
           <DialogFooter>
