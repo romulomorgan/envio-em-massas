@@ -522,11 +522,9 @@ const Index = () => {
         admin_apikey: mask(chosen?.admin_apikey)
       });
 
-      // Atualiza accountId se não estava definido
-      if (!accountId && chosen && chosen.account_id) {
-        console.log('[tenantConfig] Definindo accountId:', chosen.account_id);
-        setAccountId(String(chosen.account_id));
-      }
+      // CORREÇÃO: NÃO sobrescreve o accountId da URL com o do tenant
+      // O accountId da URL deve ter prioridade absoluta
+      console.log('[tenantConfig] Mantendo accountId da URL:', accountId);
 
       setTenantConfig(chosen);
       setHasChatwootAccess(!!(chosen.admin_apikey) && chosen.is_active === true);
@@ -534,16 +532,16 @@ const Index = () => {
       // Não define hasCvAccess aqui, será definido após carregar empresasTokens
       // setHasCvAccess(chosen.cv_activa || chosen.cv_active);
 
-      // Expor variáveis globais
+      // Expor variáveis globais - USA O ACCOUNTID DA URL, NÃO DO TENANT
       if (typeof window !== 'undefined') {
         (window as any).__ADMIN_APIKEY__ = chosen.admin_apikey || '';
-        (window as any).__ACCOUNT_ID__ = String(chosen.account_id || accountId || '');
+        (window as any).__ACCOUNT_ID__ = String(accountId || '');
         (window as any).__INBOX_ID__ = String(inboxId || '');
         (window as any).__CONVERSATION_ID__ = String(conversationId || '');
         (window as any).__FORCE_ORIGIN__ = originCanon;
         console.log('[tenantConfig] Variáveis globais definidas:', {
           __ADMIN_APIKEY__: chosen.admin_apikey ? '✅ definido' : '❌ vazio',
-          __ACCOUNT_ID__: chosen.account_id || accountId,
+          __ACCOUNT_ID__: accountId,
           __INBOX_ID__: inboxId,
           __CONVERSATION_ID__: conversationId
         });
