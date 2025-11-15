@@ -1593,6 +1593,21 @@ const Index = () => {
     }
   }, [listMode, selectedProfileId, profiles]);
 
+  // Carrega configurações das abas automaticamente no início e quando mudar perfil/origem/accountId
+  useEffect(() => {
+    console.log('[useEffect:tabsConfig] Verificando necessidade de carregar configurações...', {
+      selectedProfileId,
+      originCanon,
+      accountId,
+      profiles_length: profiles.length
+    });
+    
+    if ((selectedProfileId || originCanon) && profiles.length > 0) {
+      console.log('[useEffect:tabsConfig] ✅ Carregando configurações das abas');
+      loadTabsConfig();
+    }
+  }, [selectedProfileId, originCanon, accountId, profiles]);
+
   // Carrega empreendimentos automaticamente quando tiver acesso CV
   useEffect(() => {
     console.log('[useEffect:empreendimentos] Verificando condições...', { 
@@ -1997,29 +2012,39 @@ const Index = () => {
 
   // Carrega configurações de visibilidade das abas
   async function loadTabsConfig() {
-    if (!selectedProfileId && !originCanon) {
-      console.log('[loadTabsConfig] Nenhum perfil selecionado ou origem detectada');
-      return;
-    }
-
     try {
-      console.log('[loadTabsConfig] Buscando configurações das abas...');
-      
+      console.log('[loadTabsConfig] Iniciando busca de configurações...', { 
+        selectedProfileId, 
+        originCanon, 
+        accountId 
+      });
+
       // Busca o perfil atual para pegar o chatwoot_origin
       const selectedProfile = profiles.find(p => p.Id === selectedProfileId);
       const origin = selectedProfile?.chatwoot_origin || originCanon;
+      const accId = selectedProfile?.account_id || accountId;
       
       if (!origin) {
-        console.log('[loadTabsConfig] Origem não encontrada');
+        console.log('[loadTabsConfig] ❌ Origem não encontrada');
         return;
       }
 
-      // Busca na tabela empresas_tokens
-      const where = encodeURIComponent(`(chatwoot_origin,eq,${origin})`);
-      const url = `${NOCO_URL}/api/v2/tables/${NOCO_EMPRESAS_TOKENS_TABLE_ID}/records?where=${where}&limit=1&viewId=${NOCO_TENANT_VIEW_ID}`;
+      console.log('[loadTabsConfig] Parâmetros de busca:', { 
+        chatwoot_origin: origin, 
+        account_id: accId 
+      });
+
+      // Busca na tabela empresas_tokens usando chatwoot_origin E account_id
+      let where = `(chatwoot_origin,eq,${origin})`;
+      if (accId) {
+        where += `~and(account_id,eq,${accId})`;
+      }
+      const whereEncoded = encodeURIComponent(where);
+      const url = `${NOCO_URL}/api/v2/tables/${NOCO_EMPRESAS_TOKENS_TABLE_ID}/records?where=${whereEncoded}&limit=1&viewId=${NOCO_TENANT_VIEW_ID}`;
       
+      console.log('[loadTabsConfig] URL da consulta:', url);
       const response = await nocoGET(url);
-      console.log('[loadTabsConfig] Resposta:', response);
+      console.log('[loadTabsConfig] Resposta recebida:', response);
 
       if (response.list && response.list.length > 0) {
         const config = response.list[0];
@@ -2029,14 +2054,15 @@ const Index = () => {
           Empreendimentos: config.Empreendimentos ?? true,
           Importar: config.Importar ?? true
         });
-        console.log('[loadTabsConfig] ✅ Configurações carregadas:', {
+        console.log('[loadTabsConfig] ✅ Configurações aplicadas:', {
           Etiquetas: config.Etiquetas,
           Grupos: config.Grupos,
           Empreendimentos: config.Empreendimentos,
-          Importar: config.Importar
+          Importar: config.Importar,
+          registro_id: config.Id
         });
       } else {
-        console.log('[loadTabsConfig] Nenhuma configuração encontrada, usando padrões');
+        console.log('[loadTabsConfig] ⚠️ Nenhuma configuração encontrada, usando padrões (todas visíveis)');
         setTabsConfig({
           Etiquetas: true,
           Grupos: true,
@@ -2045,7 +2071,7 @@ const Index = () => {
         });
       }
     } catch (e) {
-      console.error('[loadTabsConfig] Erro:', e);
+      console.error('[loadTabsConfig] ❌ Erro:', e);
       // Em caso de erro, deixa todas visíveis
       setTabsConfig({
         Etiquetas: true,
