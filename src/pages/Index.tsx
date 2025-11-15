@@ -3152,7 +3152,11 @@ const Index = () => {
                       onChange={(e) => setSelectedProfileId(e.target.value)}
                       disabled={loadingProfiles}
                     >
-                      <option value="">Selecione um perfil</option>
+                      <option value="">
+                        {profiles.length === 0 
+                          ? "Clique no botão Detectar Perfil" 
+                          : "Selecione um perfil"}
+                      </option>
                       {profiles.map((p) => {
                         const status = profilesStatus[String(p.Id)];
                         const statusText = status === 'open' ? '🟢 ON' : status === 'close' ? '🔴 OFF' : status === 'connecting' ? '🟡 CONECTANDO' : '⚪ OFF';
