@@ -57,20 +57,26 @@ export function SendDebugPanel({ selectedProfileId, currentRunId }: SendDebugPan
 
   // Busca logs de erro quando há um runId ativo
   useEffect(() => {
-    if (!currentRunId || !selectedProfileId) return;
+    if (!currentRunId || !selectedProfileId) {
+      console.log('[SendDebug] ⏸️ Aguardando runId e profileId:', { currentRunId, selectedProfileId });
+      return;
+    }
 
     const fetchErrors = async () => {
       setIsLoading(true);
       try {
         console.log('[SendDebug] 🔍 Buscando logs de erro para run_id:', currentRunId);
+        console.log('[SendDebug] 👤 Perfil selecionado:', selectedProfileId);
         const result = await logsListForRun(currentRunId);
         const logs = result?.list || [];
         
-        console.log('[SendDebug] 📦 Logs recebidos:', logs.length);
+        console.log('[SendDebug] 📦 Total de logs recebidos:', logs.length);
+        console.log('[SendDebug] 📋 Primeiros logs:', logs.slice(0, 3));
         
         // Filtra apenas erros
         const errorLogs = logs.filter((log: any) => log.level === 'error');
         console.log('[SendDebug] ❌ Logs de erro encontrados:', errorLogs.length);
+        console.log('[SendDebug] 🔴 Erros:', errorLogs);
 
         // Processa cada erro
         const processedErrors: DebugError[] = errorLogs.map((log: any) => {
@@ -363,9 +369,15 @@ export function SendDebugPanel({ selectedProfileId, currentRunId }: SendDebugPan
     }
   };
 
-  if (filteredErrors.length === 0 && !isLoading) {
+  // Sempre mostra o painel se houver um runId ativo ou se houver erros
+  const shouldShow = (currentRunId && selectedProfileId) || filteredErrors.length > 0;
+
+  if (!shouldShow) {
+    console.log('[SendDebug] 🙈 Painel oculto - runId:', currentRunId, 'profileId:', selectedProfileId, 'erros:', filteredErrors.length);
     return null;
   }
+
+  console.log('[SendDebug] 👁️ Mostrando painel - erros filtrados:', filteredErrors.length);
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
