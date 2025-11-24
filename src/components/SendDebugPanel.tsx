@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Trash2, ChevronDown, Info, XCircle, Server, Zap } from 'lucide-react';
@@ -30,6 +31,7 @@ interface SendDebugPanelProps {
 export function SendDebugPanel({ selectedProfileId, currentRunId }: SendDebugPanelProps) {
   const [errors, setErrors] = useState<DebugError[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   // Carrega erros do localStorage ao iniciar
   useEffect(() => {
@@ -366,126 +368,141 @@ export function SendDebugPanel({ selectedProfileId, currentRunId }: SendDebugPan
   }
 
   return (
-    <Card className="p-4 bg-background border-destructive/20">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 text-destructive" />
-          <h3 className="text-lg font-semibold text-foreground">
-            Debug de Envios ({filteredErrors.length})
-          </h3>
-          {isLoading && (
-            <Badge variant="outline" className="animate-pulse">
-              Atualizando...
-            </Badge>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={clearDebugCache}
-          disabled={filteredErrors.length === 0}
-          className="gap-2"
-        >
-          <Trash2 className="w-4 h-4" />
-          Limpar Debug
-        </Button>
-      </div>
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card className="bg-background border-border/50">
+        <CollapsibleTrigger className="w-full p-3 flex items-center justify-between hover:bg-muted/50 transition-colors">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-medium text-muted-foreground">
+              Debug de Envios
+            </span>
+            {filteredErrors.length > 0 && (
+              <Badge variant="destructive" className="h-5 text-xs">
+                {filteredErrors.length}
+              </Badge>
+            )}
+            {isLoading && (
+              <Badge variant="outline" className="h-5 text-xs animate-pulse">
+                Atualizando...
+              </Badge>
+            )}
+          </div>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </CollapsibleTrigger>
 
-      <ScrollArea className="h-[400px] pr-4">
-        <Accordion type="single" collapsible className="space-y-2">
-          {filteredErrors.map((error) => (
-            <AccordionItem
-              key={error.id}
-              value={error.id}
-              className="border rounded-lg bg-card"
-            >
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                <div className="flex items-start gap-3 w-full text-left">
-                  <div className="flex-shrink-0 mt-0.5">
-                    {getSourceIcon(error.errorSource)}
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${getSourceColor(error.errorSource)}`}
-                      >
-                        {getSourceLabel(error.errorSource)}
-                      </Badge>
-                      {error.httpStatus && error.httpStatus >= 400 && (
-                        <Badge variant="destructive" className="text-xs">
-                          HTTP {error.httpStatus}
-                        </Badge>
-                      )}
-                      {error.errorCode && (
-                        <Badge variant="outline" className="text-xs">
-                          {error.errorCode}
-                        </Badge>
-                      )}
-                      <Badge variant="outline" className="text-xs">
-                        {error.blockType}
-                      </Badge>
-                    </div>
-                    <p className="text-sm font-medium line-clamp-1">
-                      📞 {error.number}
-                    </p>
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {error.errorMessage}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(error.timestamp).toLocaleString('pt-BR')}
-                    </p>
-                  </div>
-                  <ChevronDown className="w-4 h-4 shrink-0 transition-transform duration-200" />
-                </div>
-              </AccordionTrigger>
+        <CollapsibleContent>
+          <div className="p-4 pt-0 space-y-3">
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearDebugCache}
+                disabled={filteredErrors.length === 0}
+                className="gap-2 h-8 text-xs"
+              >
+                <Trash2 className="w-3 h-3" />
+                Limpar Debug
+              </Button>
+            </div>
 
-              <AccordionContent className="px-4 pb-4">
-                <div className="space-y-4 pt-2">
-                  {/* Mensagem de erro completa */}
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2 text-foreground">
-                      💬 Mensagem de Erro:
-                    </h4>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/50 p-3 rounded-md">
-                      {error.errorMessage}
-                    </p>
-                  </div>
+            <ScrollArea className="h-[400px] pr-4">
+              <Accordion type="single" collapsible className="space-y-2">
+                {filteredErrors.map((error) => (
+                  <AccordionItem
+                    key={error.id}
+                    value={error.id}
+                    className="border rounded-lg bg-card"
+                  >
+                    <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                      <div className="flex items-start gap-3 w-full text-left">
+                        <div className="flex-shrink-0 mt-0.5">
+                          {getSourceIcon(error.errorSource)}
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${getSourceColor(error.errorSource)}`}
+                            >
+                              {getSourceLabel(error.errorSource)}
+                            </Badge>
+                            {error.httpStatus && error.httpStatus >= 400 && (
+                              <Badge variant="destructive" className="text-xs">
+                                HTTP {error.httpStatus}
+                              </Badge>
+                            )}
+                            {error.errorCode && (
+                              <Badge variant="outline" className="text-xs">
+                                {error.errorCode}
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {error.blockType}
+                            </Badge>
+                          </div>
+                          <p className="text-sm font-medium line-clamp-1">
+                            📞 {error.number}
+                          </p>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {error.errorMessage}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(error.timestamp).toLocaleString('pt-BR')}
+                          </p>
+                        </div>
+                        <ChevronDown className="w-4 h-4 shrink-0 transition-transform duration-200" />
+                      </div>
+                    </AccordionTrigger>
 
-                  {/* Sugestões de resolução */}
-                  {error.suggestions.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-2 text-foreground">
-                        💡 Sugestões de Resolução:
-                      </h4>
-                      <ul className="space-y-1">
-                        {error.suggestions.map((suggestion, idx) => (
-                          <li
-                            key={idx}
-                            className="text-sm text-muted-foreground pl-4"
-                          >
-                            {suggestion}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                    <AccordionContent className="px-4 pb-4">
+                      <div className="space-y-4 pt-2">
+                        {/* Mensagem de erro completa */}
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2 text-foreground">
+                            💬 Mensagem de Erro:
+                          </h4>
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/50 p-3 rounded-md">
+                            {error.errorMessage}
+                          </p>
+                        </div>
 
-                  {/* Detalhes técnicos completos */}
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2 text-foreground">
-                      🔧 Detalhes Técnicos Completos:
-                    </h4>
-                    <pre className="text-xs bg-muted/50 p-3 rounded-md overflow-x-auto">
-                      {JSON.stringify(error.fullDetails, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-      </ScrollArea>
-    </Card>
+                        {/* Sugestões de resolução */}
+                        {error.suggestions.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold mb-2 text-foreground">
+                              💡 Sugestões de Resolução:
+                            </h4>
+                            <ul className="space-y-1">
+                              {error.suggestions.map((suggestion, idx) => (
+                                <li
+                                  key={idx}
+                                  className="text-sm text-muted-foreground pl-4"
+                                >
+                                  {suggestion}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Detalhes técnicos completos */}
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2 text-foreground">
+                            🔧 Detalhes Técnicos Completos:
+                          </h4>
+                          <pre className="text-xs bg-muted/50 p-3 rounded-md overflow-x-auto">
+                            {JSON.stringify(error.fullDetails, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </ScrollArea>
+          </div>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 }
