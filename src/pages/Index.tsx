@@ -85,6 +85,7 @@ import {
   fetchConnectionStatus
 } from '@/lib/api-webhooks';
 import { Contact, Block, Label as LabelType, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
+import { SendDebugPanel } from '@/components/SendDebugPanel';
 
 const TYPE_LABEL: Record<string, string> = {
   text: 'Texto',
@@ -160,6 +161,9 @@ const Index = () => {
   const [tab, setTab] = useState('direct');
   const [status, setStatus] = useState('');
   const [listMode, setListMode] = useState('usuarios');
+  
+  // Run ID para tracking de debug
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
 
   // Debug
   const [debugOpen, setDebugOpen] = useState(false);
@@ -2497,6 +2501,10 @@ const Index = () => {
       
       const runId = `run_${Date.now()}_${uid()}`;
       
+      // Salva o run_id no estado para debug
+      setCurrentRunId(runId);
+      console.log('[handleSend] 🚀 Iniciando envio com run_id:', runId);
+      
       // Converte o datetime-local para UTC se houver agendamento
       let whenUTC: string;
       if (schedule) {
@@ -4399,6 +4407,16 @@ const Index = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Painel de Debug de Envios */}
+      {currentRunId && selectedProfileId && (
+        <div className="mt-6 max-w-6xl mx-auto px-4">
+          <SendDebugPanel 
+            selectedProfileId={selectedProfileId}
+            currentRunId={currentRunId}
+          />
+        </div>
+      )}
     </div>
   );
 };
