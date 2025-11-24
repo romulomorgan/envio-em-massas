@@ -2576,13 +2576,14 @@ const Index = () => {
       
       setStatus(`✅ Campanha "${campaignName}" criada com sucesso! ID: ${result.Id || result.id}`);
       
-      // Limpa TODOS os campos após sucesso
+      // Limpa TODOS os campos após sucesso (EXCETO selectedProfileId e currentRunId para debug)
       setBlocks([]);
       setContacts([]);
       setSelectedContacts([]);
       setSchedule('');
       setCampaignName('Campanha');
-      setSelectedProfileId('');
+      // NÃO limpa setSelectedProfileId('') - mantém para debug
+      // NÃO limpa setCurrentRunId(null) - mantém para tracking de erros
       setEditingQueueId(null);
       setEditMode('none');
       
