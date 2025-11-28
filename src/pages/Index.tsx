@@ -4294,11 +4294,6 @@ const Index = () => {
                   setSelectedQueueDetails(null);
                   setTab('monitor');
                 }}
-                onResendSingle={async (number, name) => {
-                  // Aqui seria implementada a lógica de reenvio individual
-                  // Por enquanto, apenas mostra um toast informando que a funcionalidade será implementada
-                  toast.success(`Funcionalidade de reenvio para ${name} (${number}) será implementada em breve.`);
-                }}
               />
             </div>
           )}
