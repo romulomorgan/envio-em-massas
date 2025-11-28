@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { logsListForRun, logsListByQueueId } from '@/lib/noco-api';
 import { formatPhoneLocal, formatBRDateTime, extractNumberFromLog, extractReasonFromLog } from '@/lib/utils-envio';
+import { resendToContact } from '@/lib/api-resend';
+import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
 // Tipos para os detalhes de entrega
@@ -47,7 +49,6 @@ interface CampaignDeliveryDetailsProps {
   runId?: string;
   contactsCount: number;
   onClose: () => void;
-  onResendSingle: (number: string, name: string) => void;
 }
 
 // Função para determinar a origem do erro
@@ -185,8 +186,7 @@ export function CampaignDeliveryDetails({
   queueName,
   runId,
   contactsCount,
-  onClose,
-  onResendSingle
+  onClose
 }: CampaignDeliveryDetailsProps) {
   const [deliveries, setDeliveries] = useState<DeliveryDetail[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -194,112 +194,113 @@ export function CampaignDeliveryDetails({
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [resendingIds, setResendingIds] = useState<Set<string>>(new Set());
 
-  // Carrega os logs da campanha
-  useEffect(() => {
-    async function loadDeliveries() {
-      setIsLoading(true);
-      try {
-        console.log('[DeliveryDetails] 📦 Carregando logs para queue:', queueId, 'runId:', runId);
-        
-        let logs: any[] = [];
-        
-        // Tenta buscar por run_id primeiro
-        if (runId) {
-          const result = await logsListForRun(runId);
-          logs = result?.list || [];
-          console.log('[DeliveryDetails] ✅ Logs por run_id:', logs.length);
-        }
-        
-        // Se não encontrou, busca por queue_id
-        if (logs.length === 0) {
-          const result = await logsListByQueueId(queueId);
-          logs = result?.list || [];
-          console.log('[DeliveryDetails] ✅ Logs por queue_id:', logs.length);
-        }
-
-        // Agrupa logs por número (um número pode ter múltiplos logs/blocos)
-        const numberMap = new Map<string, DeliveryDetail>();
-        
-        logs.forEach((log: any) => {
-          const number = extractNumberFromLog(log);
-          if (!number) return;
-          
-          const existing = numberMap.get(number);
-          const isError = log.level === 'error';
-          const isSuccess = log.level === 'success' || log.level === 'info' || 
-                           log.http_status === 200 || log.http_status === 201;
-          
-          // Se já existe e tem sucesso, mantém sucesso (prioridade)
-          if (existing && existing.status === 'success' && !isError) {
-            return;
-          }
-          
-          // Se é erro, processa detalhes
-          let errorMessage = '';
-          let errorSource: DeliveryDetail['errorSource'] = undefined;
-          let suggestions: string[] = [];
-          
-          if (isError) {
-            errorMessage = extractReasonFromLog(log);
-            errorSource = determineErrorSource(log, errorMessage);
-            suggestions = generateSuggestions(errorSource, errorMessage, log.http_status);
-          }
-          
-          // Extrai nome do contato se disponível
-          let contactName = '';
-          try {
-            const msgJson = typeof log.message_json === 'string' 
-              ? JSON.parse(log.message_json) 
-              : log.message_json;
-            contactName = msgJson?.contact_name || msgJson?.name || log.contact_name || '';
-          } catch {
-            contactName = log.contact_name || '';
-          }
-          
-          const delivery: DeliveryDetail = {
-            id: String(log.Id || Date.now()),
-            number,
-            name: contactName || 'Contato',
-            status: isError ? 'error' : isSuccess ? 'success' : 'pending',
-            timestamp: log.CreatedAt || new Date().toISOString(),
-            errorSource,
-            errorMessage,
-            errorCode: log.error_code,
-            httpStatus: log.http_status,
-            suggestions,
-            rawLog: log,
-            blockType: log.action || log.block_type || 'mensagem'
-          };
-          
-          // Atualiza ou cria
-          if (!existing || isError || (existing.status !== 'success' && isSuccess)) {
-            numberMap.set(number, delivery);
-          }
-        });
-        
-        const deliveryList = Array.from(numberMap.values());
-        
-        // Ordena: erros primeiro, depois sucessos
-        deliveryList.sort((a, b) => {
-          if (a.status === 'error' && b.status !== 'error') return -1;
-          if (a.status !== 'error' && b.status === 'error') return 1;
-          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-        });
-        
-        console.log('[DeliveryDetails] 📊 Total de entregas processadas:', deliveryList.length);
-        console.log('[DeliveryDetails] ❌ Erros:', deliveryList.filter(d => d.status === 'error').length);
-        console.log('[DeliveryDetails] ✅ Sucesso:', deliveryList.filter(d => d.status === 'success').length);
-        
-        setDeliveries(deliveryList);
-      } catch (error) {
-        console.error('[DeliveryDetails] ❌ Erro ao carregar logs:', error);
-      } finally {
-        setIsLoading(false);
+  // Função para recarregar os dados
+  const loadDeliveries = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      console.log('[DeliveryDetails] 📦 Carregando logs para queue:', queueId, 'runId:', runId);
+      
+      let logs: any[] = [];
+      
+      // Tenta buscar por run_id primeiro
+      if (runId) {
+        const result = await logsListForRun(runId);
+        logs = result?.list || [];
+        console.log('[DeliveryDetails] ✅ Logs por run_id:', logs.length);
       }
+      
+      // Se não encontrou, busca por queue_id
+      if (logs.length === 0) {
+        const result = await logsListByQueueId(queueId);
+        logs = result?.list || [];
+        console.log('[DeliveryDetails] ✅ Logs por queue_id:', logs.length);
+      }
+
+      // Agrupa logs por número (um número pode ter múltiplos logs/blocos)
+      const numberMap = new Map<string, DeliveryDetail>();
+      
+      logs.forEach((log: any) => {
+        const number = extractNumberFromLog(log);
+        if (!number) return;
+        
+        const existing = numberMap.get(number);
+        const isError = log.level === 'error';
+        const isSuccess = log.level === 'success' || log.level === 'info' || 
+                         log.http_status === 200 || log.http_status === 201;
+        
+        // Se já existe e tem sucesso, mantém sucesso (prioridade)
+        if (existing && existing.status === 'success' && !isError) {
+          return;
+        }
+        
+        // Se é erro, processa detalhes
+        let errorMessage = '';
+        let errorSource: DeliveryDetail['errorSource'] = undefined;
+        let suggestions: string[] = [];
+        
+        if (isError) {
+          errorMessage = extractReasonFromLog(log);
+          errorSource = determineErrorSource(log, errorMessage);
+          suggestions = generateSuggestions(errorSource, errorMessage, log.http_status);
+        }
+        
+        // Extrai nome do contato se disponível
+        let contactName = '';
+        try {
+          const msgJson = typeof log.message_json === 'string' 
+            ? JSON.parse(log.message_json) 
+            : log.message_json;
+          contactName = msgJson?.contact_name || msgJson?.name || log.contact_name || '';
+        } catch {
+          contactName = log.contact_name || '';
+        }
+        
+        const delivery: DeliveryDetail = {
+          id: String(log.Id || Date.now()),
+          number,
+          name: contactName || 'Contato',
+          status: isError ? 'error' : isSuccess ? 'success' : 'pending',
+          timestamp: log.CreatedAt || new Date().toISOString(),
+          errorSource,
+          errorMessage,
+          errorCode: log.error_code,
+          httpStatus: log.http_status,
+          suggestions,
+          rawLog: log,
+          blockType: log.action || log.block_type || 'mensagem'
+        };
+        
+        // Atualiza ou cria
+        if (!existing || isError || (existing.status !== 'success' && isSuccess)) {
+          numberMap.set(number, delivery);
+        }
+      });
+      
+      const deliveryList = Array.from(numberMap.values());
+      
+      // Ordena: erros primeiro, depois sucessos
+      deliveryList.sort((a, b) => {
+        if (a.status === 'error' && b.status !== 'error') return -1;
+        if (a.status !== 'error' && b.status === 'error') return 1;
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
+      
+      console.log('[DeliveryDetails] 📊 Total de entregas processadas:', deliveryList.length);
+      console.log('[DeliveryDetails] ❌ Erros:', deliveryList.filter(d => d.status === 'error').length);
+      console.log('[DeliveryDetails] ✅ Sucesso:', deliveryList.filter(d => d.status === 'success').length);
+      
+      setDeliveries(deliveryList);
+    } catch (error) {
+      console.error('[DeliveryDetails] ❌ Erro ao carregar logs:', error);
+    } finally {
+      setIsLoading(false);
     }
-    
-    loadDeliveries();
   }, [queueId, runId]);
+
+  // Carrega os dados ao montar
+  useEffect(() => {
+    loadDeliveries();
+  }, [loadDeliveries]);
 
   // Filtra entregas baseado no filtro selecionado
   const filteredDeliveries = useMemo(() => {
@@ -327,16 +328,66 @@ export function CampaignDeliveryDetails({
   // Handler de reenvio individual
   const handleResendSingle = async (delivery: DeliveryDetail) => {
     setResendingIds(prev => new Set(prev).add(delivery.id));
+    
     try {
-      await onResendSingle(delivery.number, delivery.name);
-    } finally {
+      console.log('[DeliveryDetails] 🔄 Iniciando reenvio para:', delivery.number);
+      
+      const result = await resendToContact(
+        queueId,
+        delivery.number,
+        delivery.name,
+        delivery.id
+      );
+      
+      console.log('[DeliveryDetails] Resultado do reenvio:', result);
+      
+      if (result.success) {
+        toast.success(result.message);
+        
+        // Atualiza o status na lista localmente
+        setDeliveries(prev => prev.map(d => 
+          d.id === delivery.id 
+            ? { 
+                ...d, 
+                status: 'success' as const, 
+                errorSource: undefined,
+                errorMessage: undefined,
+                suggestions: [],
+                timestamp: new Date().toISOString()
+              }
+            : d
+        ));
+      } else {
+        toast.error(result.message);
+        
+        // Atualiza com as novas informações de erro
+        if (result.errors.length > 0) {
+          setDeliveries(prev => prev.map(d => 
+            d.id === delivery.id 
+              ? { 
+                  ...d, 
+                  errorMessage: result.errors.join('; '),
+                  timestamp: new Date().toISOString()
+                }
+              : d
+          ));
+        }
+      }
+      
+      // Recarrega os dados do servidor para garantir consistência
       setTimeout(() => {
-        setResendingIds(prev => {
-          const next = new Set(prev);
-          next.delete(delivery.id);
-          return next;
-        });
-      }, 2000);
+        loadDeliveries();
+      }, 1500);
+      
+    } catch (error: any) {
+      console.error('[DeliveryDetails] ❌ Erro ao reenviar:', error);
+      toast.error(`Erro ao reenviar: ${error.message}`);
+    } finally {
+      setResendingIds(prev => {
+        const next = new Set(prev);
+        next.delete(delivery.id);
+        return next;
+      });
     }
   };
 
