@@ -59,6 +59,188 @@ function normalizeEvolutionBase(u: string): string {
   return s;
 }
 
+// ========================================
+// Resultado da verificação de status do perfil
+// ========================================
+export interface ProfileStatusResult {
+  available: boolean;
+  status: 'online' | 'offline' | 'connecting' | 'unknown' | 'error';
+  message: string;
+  instanceName?: string;
+}
+
+// Verifica status da instância Evolution API
+export async function checkProfileStatus(
+  base: string,
+  instance: string,
+  token: string
+): Promise<ProfileStatusResult> {
+  const baseUrl = normalizeEvolutionBase(base);
+  
+  // Paths para verificar conexão
+  const paths = [
+    `/instance/connectionState/${instance}`,
+    `/instance/connect/${instance}`,
+    `/instance/fetchInstances?instanceName=${instance}`
+  ];
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'apikey': token,
+    'x-api-key': token,
+    'Authorization': `Bearer ${token}`
+  };
+
+  for (const path of paths) {
+    const url = `${baseUrl}${path}`;
+    console.log('[checkProfileStatus] Verificando:', url);
+    
+    try {
+      const response = await fetch(url, { method: 'GET', headers });
+      
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return {
+            available: false,
+            status: 'error',
+            message: 'Token/API Key inválido ou sem permissão',
+            instanceName: instance
+          };
+        }
+        continue; // Tenta próximo path
+      }
+      
+      const data = await response.json();
+      console.log('[checkProfileStatus] Resposta:', data);
+      
+      // Analisa resposta do connectionState
+      if (data?.instance?.state || data?.state) {
+        const state = (data?.instance?.state || data?.state || '').toLowerCase();
+        
+        if (state === 'open' || state === 'connected') {
+          return {
+            available: true,
+            status: 'online',
+            message: 'Instância conectada e pronta para enviar',
+            instanceName: instance
+          };
+        }
+        
+        if (state === 'connecting' || state === 'syncing') {
+          return {
+            available: false,
+            status: 'connecting',
+            message: 'Instância está conectando, aguarde...',
+            instanceName: instance
+          };
+        }
+        
+        if (state === 'close' || state === 'disconnected' || state === 'qrcode') {
+          return {
+            available: false,
+            status: 'offline',
+            message: state === 'qrcode' 
+              ? 'Instância desconectada - precisa escanear QR Code'
+              : 'Instância desconectada',
+            instanceName: instance
+          };
+        }
+      }
+      
+      // Analisa resposta do fetchInstances
+      if (Array.isArray(data)) {
+        const inst = data.find((i: any) => 
+          i.name === instance || i.instanceName === instance || i.instance?.instanceName === instance
+        );
+        
+        if (inst) {
+          const connStatus = inst.connectionStatus || inst.instance?.status || '';
+          if (connStatus === 'open' || connStatus === 'connected') {
+            return {
+              available: true,
+              status: 'online',
+              message: 'Instância conectada',
+              instanceName: instance
+            };
+          }
+        } else {
+          return {
+            available: false,
+            status: 'error',
+            message: 'Instância não encontrada',
+            instanceName: instance
+          };
+        }
+      }
+      
+      // Se chegou aqui com resposta OK, assume disponível
+      return {
+        available: true,
+        status: 'online',
+        message: 'Instância disponível',
+        instanceName: instance
+      };
+      
+    } catch (e) {
+      console.error('[checkProfileStatus] Erro:', e);
+      continue; // Tenta próximo path
+    }
+  }
+
+  return {
+    available: false,
+    status: 'unknown',
+    message: 'Não foi possível verificar o status da instância',
+    instanceName: instance
+  };
+}
+
+// Busca e verifica status do perfil de uma campanha
+export async function getCampaignProfileStatus(queueId: string | number): Promise<ProfileStatusResult> {
+  try {
+    const queue = await queueGetOne(queueId);
+    if (!queue) {
+      return {
+        available: false,
+        status: 'error',
+        message: 'Campanha não encontrada'
+      };
+    }
+
+    const payload = queue.payload_json;
+    const profile = payload?.profile;
+    
+    if (!profile) {
+      return {
+        available: false,
+        status: 'error',
+        message: 'Perfil de conexão não encontrado na campanha'
+      };
+    }
+
+    const evoBase = profile.evo_base_url || profile.base_url || profile.url || '';
+    const evoInstance = profile.evo_instance || profile.instance || profile.instancia || '';
+    const evoToken = profile.evo_apikey || profile.evo_token || profile.token || '';
+
+    if (!evoBase || !evoInstance || !evoToken) {
+      return {
+        available: false,
+        status: 'error',
+        message: 'Credenciais da Evolution API incompletas'
+      };
+    }
+
+    return await checkProfileStatus(evoBase, evoInstance, evoToken);
+  } catch (e: any) {
+    console.error('[getCampaignProfileStatus] Erro:', e);
+    return {
+      available: false,
+      status: 'error',
+      message: `Erro ao verificar: ${e.message}`
+    };
+  }
+}
+
 // Monta o payload para cada tipo de bloco
 function buildPayloadForBlock(blk: any, numberE164: string, contactName: string = '') {
   const rawType = String(blk?.type ?? '').trim().toLowerCase();
@@ -311,7 +493,8 @@ export async function resendToContact(
   queueId: string | number,
   targetNumber: string,
   targetName: string,
-  existingLogId?: string | number | null
+  existingLogId?: string | number | null,
+  skipProfileCheck: boolean = false
 ): Promise<ResendResult> {
   console.log('[resend] Iniciando reenvio para:', targetNumber, 'Queue:', queueId);
   
@@ -352,6 +535,19 @@ export async function resendToContact(
     if (!evoBase || !evoInstance || !evoToken) {
       result.message = 'Credenciais da Evolution API incompletas';
       return result;
+    }
+
+    // 2.1 Verifica se o perfil está disponível (se não foi pulado)
+    if (!skipProfileCheck) {
+      console.log('[resend] Verificando status do perfil antes do envio...');
+      const profileStatus = await checkProfileStatus(evoBase, evoInstance, evoToken);
+      
+      if (!profileStatus.available) {
+        result.message = `Perfil indisponível: ${profileStatus.message}`;
+        result.errors.push(profileStatus.message);
+        return result;
+      }
+      console.log('[resend] ✅ Perfil disponível:', profileStatus.message);
     }
 
     // 3. Extrai blocos da campanha
