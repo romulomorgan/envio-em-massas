@@ -19,11 +19,14 @@ import {
   FileWarning,
   HelpCircle,
   Download,
-  Filter
+  Filter,
+  Wifi,
+  WifiOff,
+  Loader2
 } from 'lucide-react';
 import { logsListForRun, logsListByQueueId } from '@/lib/noco-api';
 import { formatPhoneLocal, formatBRDateTime, extractNumberFromLog, extractReasonFromLog } from '@/lib/utils-envio';
-import { resendToContact } from '@/lib/api-resend';
+import { resendToContact, getCampaignProfileStatus, ProfileStatusResult } from '@/lib/api-resend';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -193,6 +196,35 @@ export function CampaignDeliveryDetails({
   const [filter, setFilter] = useState<'all' | 'success' | 'error'>('all');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [resendingIds, setResendingIds] = useState<Set<string>>(new Set());
+  
+  // Estado do perfil de conexão
+  const [profileStatus, setProfileStatus] = useState<ProfileStatusResult | null>(null);
+  const [isCheckingProfile, setIsCheckingProfile] = useState(true);
+
+  // Verifica status do perfil de conexão
+  const checkProfileConnection = useCallback(async () => {
+    setIsCheckingProfile(true);
+    try {
+      console.log('[DeliveryDetails] 🔌 Verificando status do perfil para queue:', queueId);
+      const status = await getCampaignProfileStatus(queueId);
+      console.log('[DeliveryDetails] Status do perfil:', status);
+      setProfileStatus(status);
+    } catch (error) {
+      console.error('[DeliveryDetails] Erro ao verificar perfil:', error);
+      setProfileStatus({
+        available: false,
+        status: 'error',
+        message: 'Erro ao verificar status do perfil'
+      });
+    } finally {
+      setIsCheckingProfile(false);
+    }
+  }, [queueId]);
+
+  // Verifica o perfil ao montar
+  useEffect(() => {
+    checkProfileConnection();
+  }, [checkProfileConnection]);
 
   // Função para recarregar os dados
   const loadDeliveries = useCallback(async () => {
@@ -327,16 +359,26 @@ export function CampaignDeliveryDetails({
 
   // Handler de reenvio individual
   const handleResendSingle = async (delivery: DeliveryDetail) => {
+    // Verifica se o perfil está disponível antes de tentar reenviar
+    if (!profileStatus?.available) {
+      toast.error('Perfil de conexão indisponível. Verifique a conexão e tente novamente.');
+      // Atualiza o status do perfil
+      checkProfileConnection();
+      return;
+    }
+    
     setResendingIds(prev => new Set(prev).add(delivery.id));
     
     try {
       console.log('[DeliveryDetails] 🔄 Iniciando reenvio para:', delivery.number);
       
+      // skipProfileCheck=true pois já verificamos acima
       const result = await resendToContact(
         queueId,
         delivery.number,
         delivery.name,
-        delivery.id
+        delivery.id,
+        true // skipProfileCheck - já verificamos no componente
       );
       
       console.log('[DeliveryDetails] Resultado do reenvio:', result);
@@ -359,6 +401,12 @@ export function CampaignDeliveryDetails({
         ));
       } else {
         toast.error(result.message);
+        
+        // Verifica se o erro é de perfil indisponível
+        if (result.message.includes('indisponível') || result.message.includes('desconectado')) {
+          // Atualiza o status do perfil
+          checkProfileConnection();
+        }
         
         // Atualiza com as novas informações de erro
         if (result.errors.length > 0) {
@@ -429,7 +477,7 @@ export function CampaignDeliveryDetails({
         </div>
 
         {/* Stats */}
-        <div className="flex items-center gap-4 mt-4">
+        <div className="flex items-center gap-4 mt-4 flex-wrap">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <span className="text-sm font-medium">{successCount} enviados</span>
@@ -444,6 +492,56 @@ export function CampaignDeliveryDetails({
               {contactsCount} contatos na campanha
             </span>
           </div>
+        </div>
+
+        {/* Status do Perfil de Conexão */}
+        <div className="mt-3 p-3 rounded-lg border border-border bg-muted/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isCheckingProfile ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Verificando conexão...</span>
+                </>
+              ) : profileStatus?.available ? (
+                <>
+                  <Wifi className="h-4 w-4 text-green-500" />
+                  <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+                    Perfil conectado
+                  </span>
+                  {profileStatus.instanceName && (
+                    <Badge variant="outline" className="text-xs">
+                      {profileStatus.instanceName}
+                    </Badge>
+                  )}
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-4 w-4 text-red-500" />
+                  <span className="text-sm text-red-600 dark:text-red-400 font-medium">
+                    Perfil indisponível
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    — {profileStatus?.message || 'Verifique a conexão'}
+                  </span>
+                </>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={checkProfileConnection}
+              disabled={isCheckingProfile}
+              className="h-7 px-2"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isCheckingProfile ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+          {!profileStatus?.available && !isCheckingProfile && (
+            <p className="text-xs text-muted-foreground mt-2">
+              💡 O botão "Reenviar" ficará disponível quando o perfil estiver conectado.
+            </p>
+          )}
         </div>
 
         {/* Filters and Actions */}
@@ -562,11 +660,26 @@ export function CampaignDeliveryDetails({
                             e.stopPropagation();
                             handleResendSingle(delivery);
                           }}
-                          disabled={resendingIds.has(delivery.id)}
-                          className="text-blue-600 border-blue-200 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-900 dark:hover:bg-blue-950"
+                          disabled={resendingIds.has(delivery.id) || !profileStatus?.available || isCheckingProfile}
+                          className={`${
+                            profileStatus?.available 
+                              ? 'text-blue-600 border-blue-200 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-900 dark:hover:bg-blue-950'
+                              : 'text-muted-foreground border-muted opacity-60 cursor-not-allowed'
+                          }`}
+                          title={
+                            !profileStatus?.available 
+                              ? `Perfil indisponível: ${profileStatus?.message || 'Verifique a conexão'}` 
+                              : 'Reenviar mensagem'
+                          }
                         >
                           <RefreshCw className={`h-4 w-4 mr-1 ${resendingIds.has(delivery.id) ? 'animate-spin' : ''}`} />
-                          {resendingIds.has(delivery.id) ? 'Reenviando...' : 'Reenviar'}
+                          {resendingIds.has(delivery.id) 
+                            ? 'Reenviando...' 
+                            : isCheckingProfile 
+                              ? 'Verificando...' 
+                              : !profileStatus?.available 
+                                ? 'Indisponível' 
+                                : 'Reenviar'}
                         </Button>
                       )}
                       
