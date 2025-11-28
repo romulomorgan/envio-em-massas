@@ -85,7 +85,8 @@ import {
   fetchConnectionStatus
 } from '@/lib/api-webhooks';
 import { Contact, Block, Label as LabelType, Group, Empreendimento, Profile, QueueRecord, TenantConfig } from '@/types/envio';
-import { SendDebugPanel } from '@/components/SendDebugPanel';
+import { CampaignDeliveryDetails } from '@/components/CampaignDeliveryDetails';
+import { Eye } from 'lucide-react';
 
 const TYPE_LABEL: Record<string, string> = {
   text: 'Texto',
@@ -164,6 +165,14 @@ const Index = () => {
   
   // Run ID para tracking de debug
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+
+  // Campanha selecionada para ver detalhes de envio
+  const [selectedQueueDetails, setSelectedQueueDetails] = useState<{
+    queueId: string | number;
+    queueName: string;
+    runId?: string;
+    contactsCount: number;
+  } | null>(null);
 
   // Debug
   const [debugOpen, setDebugOpen] = useState(false);
@@ -3195,6 +3204,25 @@ const Index = () => {
             >
               Acompanhar envios
             </button>
+            {selectedQueueDetails && (
+              <button
+                className={`tab-custom ${tab === 'details' ? 'tab-custom-active' : 'tab-custom-inactive'} flex items-center gap-2`}
+                onClick={() => setTab('details')}
+              >
+                <Eye className="h-4 w-4" />
+                Detalhes de Envios
+                <button 
+                  className="ml-1 hover:bg-destructive/20 rounded p-0.5"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedQueueDetails(null);
+                    setTab('monitor');
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </button>
+            )}
           </div>
 
           {/* TAB: DIRETO */}
@@ -4157,6 +4185,23 @@ const Index = () => {
                                 >
                                   <Download className="h-4 w-4" />
                                 </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 text-primary hover:text-primary/80"
+                                  onClick={() => {
+                                    setSelectedQueueDetails({
+                                      queueId: q.Id,
+                                      queueName: q.name,
+                                      runId: q.run_id,
+                                      contactsCount: q.contacts_count || 0
+                                    });
+                                    setTab('details');
+                                  }}
+                                  title="Ver Detalhes de Envios"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
                                 {(q.status === 'failed' || q.status === 'erro') && (
                                   <Button
                                     size="icon"
@@ -4234,6 +4279,27 @@ const Index = () => {
                   </SmallBtn>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB: DETALHES DE ENVIOS */}
+          {tab === 'details' && selectedQueueDetails && (
+            <div className="space-y-6">
+              <CampaignDeliveryDetails
+                queueId={selectedQueueDetails.queueId}
+                queueName={selectedQueueDetails.queueName}
+                runId={selectedQueueDetails.runId}
+                contactsCount={selectedQueueDetails.contactsCount}
+                onClose={() => {
+                  setSelectedQueueDetails(null);
+                  setTab('monitor');
+                }}
+                onResendSingle={async (number, name) => {
+                  // Aqui seria implementada a lógica de reenvio individual
+                  // Por enquanto, apenas mostra um toast informando que a funcionalidade será implementada
+                  toast.success(`Funcionalidade de reenvio para ${name} (${number}) será implementada em breve.`);
+                }}
+              />
             </div>
           )}
 
@@ -4409,15 +4475,6 @@ const Index = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Painel de Debug de Envios */}
-      {currentRunId && selectedProfileId && (
-        <div className="mt-6 max-w-6xl mx-auto px-4">
-          <SendDebugPanel 
-            selectedProfileId={selectedProfileId}
-            currentRunId={currentRunId}
-          />
-        </div>
-      )}
     </div>
   );
 };
